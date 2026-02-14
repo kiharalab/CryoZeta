@@ -156,28 +156,29 @@ viewers such as ChimeraX or PyMOL.
 
 #### Reference
 
-## Development
+<details>
+<summary>## Development</summary>
 
 ### Install dev dependencies
 
 ```bash
-uv sync --group dev
+pixi install -e dev
 ```
 
 ### Linting and formatting with Ruff
 
 ```bash
 # Check for lint errors
-uv run ruff check .
+pixi run -e dev ruff check .
 
 # Auto-fix lint errors where possible
-uv run ruff check --fix .
+pixi run -e dev ruff check --fix .
 
 # Format code
-uv run ruff format .
+pixi run -e dev ruff format .
 
 # Check formatting without applying changes
-uv run ruff format --check .
+pixi run -e dev ruff format --check .
 ```
 
 ### Pre-commit hooks with prek
@@ -186,11 +187,13 @@ uv run ruff format --check .
 
 ```bash
 # Install hooks into your local .git/hooks
-uv run prek install
+pixi run -e dev prek install
 
 # Run all hooks manually against staged files
-uv run prek run
+pixi run -e dev prek run
 ```
+
+</details>
 
 ## Acknowledgements
 
