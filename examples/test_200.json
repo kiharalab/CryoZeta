@@ -2,8 +2,8 @@
     {
         "name": "8ofz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 1.9,
         "map_path": "/scratch/gautschi/liu3852/emdb/16864.map.gz",
         "sequences": [
             {
@@ -21,8 +21,8 @@
     {
         "name": "8orj",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.3,
+        "contour_level": 0.0289,
         "map_path": "/scratch/gautschi/liu3852/emdb/17127.map.gz",
         "sequences": [
             {
@@ -50,8 +50,8 @@
     {
         "name": "8qwc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.27,
+        "contour_level": 0.085,
         "map_path": "/scratch/gautschi/liu3852/emdb/18688.map.gz",
         "sequences": [
             {
@@ -69,8 +69,8 @@
     {
         "name": "8qy7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.66,
+        "contour_level": 0.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/18747.map.gz",
         "sequences": [
             {
@@ -88,8 +88,8 @@
     {
         "name": "8r0n",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.07,
         "map_path": "/scratch/gautschi/liu3852/emdb/18798.map.gz",
         "sequences": [
             {
@@ -107,8 +107,8 @@
     {
         "name": "8r3y",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.68,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/18877.map.gz",
         "sequences": [
             {
@@ -146,8 +146,8 @@
     {
         "name": "8rq5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.32,
+        "contour_level": 0.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/19434.map.gz",
         "sequences": [
             {
@@ -165,8 +165,8 @@
     {
         "name": "8s3o",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.99,
+        "contour_level": 0.24,
         "map_path": "/scratch/gautschi/liu3852/emdb/19699.map.gz",
         "sequences": [
             {
@@ -184,8 +184,8 @@
     {
         "name": "8s6b",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.06,
+        "contour_level": 0.005,
         "map_path": "/scratch/gautschi/liu3852/emdb/19757.map.gz",
         "sequences": [
             {
@@ -203,8 +203,8 @@
     {
         "name": "8s6w",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.3,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/19759.map.gz",
         "sequences": [
             {
@@ -232,8 +232,8 @@
     {
         "name": "8s82",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.92,
+        "contour_level": 0.091,
         "map_path": "/scratch/gautschi/liu3852/emdb/19790.map.gz",
         "sequences": [
             {
@@ -273,8 +273,8 @@
     {
         "name": "8t5o",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.98,
+        "contour_level": 0.291,
         "map_path": "/scratch/gautschi/liu3852/emdb/41059.map.gz",
         "sequences": [
             {
@@ -292,8 +292,8 @@
     {
         "name": "8un2",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.3,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/42391.map.gz",
         "sequences": [
             {
@@ -311,8 +311,8 @@
     {
         "name": "8unk",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.91,
+        "contour_level": 3.43,
         "map_path": "/scratch/gautschi/liu3852/emdb/42407.map.gz",
         "sequences": [
             {
@@ -360,8 +360,8 @@
     {
         "name": "8uy9",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.65,
+        "contour_level": 0.33,
         "map_path": "/scratch/gautschi/liu3852/emdb/42796.map.gz",
         "sequences": [
             {
@@ -379,8 +379,8 @@
     {
         "name": "8vjl",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.5,
+        "contour_level": 0.11,
         "map_path": "/scratch/gautschi/liu3852/emdb/43288.map.gz",
         "sequences": [
             {
@@ -408,8 +408,8 @@
     {
         "name": "8vow",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.44,
+        "contour_level": 0.09,
         "map_path": "/scratch/gautschi/liu3852/emdb/43393.map.gz",
         "sequences": [
             {
@@ -427,8 +427,8 @@
     {
         "name": "8vz6",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.56,
+        "contour_level": 0.02,
         "map_path": "/scratch/gautschi/liu3852/emdb/43682.map.gz",
         "sequences": [
             {
@@ -456,8 +456,8 @@
     {
         "name": "8w4a",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.69,
+        "contour_level": 0.17,
         "map_path": "/scratch/gautschi/liu3852/emdb/37264.map.gz",
         "sequences": [
             {
@@ -475,8 +475,8 @@
     {
         "name": "8wcx",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.09,
+        "contour_level": 0.22,
         "map_path": "/scratch/gautschi/liu3852/emdb/37451.map.gz",
         "sequences": [
             {
@@ -504,8 +504,8 @@
     {
         "name": "8wf8",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.59,
+        "contour_level": 0.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/37486.map.gz",
         "sequences": [
             {
@@ -533,8 +533,8 @@
     {
         "name": "8wis",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.78,
+        "contour_level": 0.65,
         "map_path": "/scratch/gautschi/liu3852/emdb/37567.map.gz",
         "sequences": [
             {
@@ -552,8 +552,8 @@
     {
         "name": "8wr3",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.048,
         "map_path": "/scratch/gautschi/liu3852/emdb/37761.map.gz",
         "sequences": [
             {
@@ -571,8 +571,8 @@
     {
         "name": "8wtm",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.65,
+        "contour_level": 0.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/37836.map.gz",
         "sequences": [
             {
@@ -590,8 +590,8 @@
     {
         "name": "8x1b",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.59,
+        "contour_level": 0.143,
         "map_path": "/scratch/gautschi/liu3852/emdb/37989.map.gz",
         "sequences": [
             {
@@ -609,8 +609,8 @@
     {
         "name": "8x7f",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.66,
+        "contour_level": 0.0408,
         "map_path": "/scratch/gautschi/liu3852/emdb/38098.map.gz",
         "sequences": [
             {
@@ -628,8 +628,8 @@
     {
         "name": "8x9o",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.06,
+        "contour_level": 1.61,
         "map_path": "/scratch/gautschi/liu3852/emdb/38177.map.gz",
         "sequences": [
             {
@@ -647,8 +647,8 @@
     {
         "name": "8xih",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.012,
         "map_path": "/scratch/gautschi/liu3852/emdb/38373.map.gz",
         "sequences": [
             {
@@ -684,8 +684,8 @@
     {
         "name": "8xij",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.37,
+        "contour_level": 0.23,
         "map_path": "/scratch/gautschi/liu3852/emdb/38374.map.gz",
         "sequences": [
             {
@@ -703,8 +703,8 @@
     {
         "name": "8xj2",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.16,
+        "contour_level": 0.378,
         "map_path": "/scratch/gautschi/liu3852/emdb/38392.map.gz",
         "sequences": [
             {
@@ -722,8 +722,8 @@
     {
         "name": "8xsm",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.01,
+        "contour_level": 1.58,
         "map_path": "/scratch/gautschi/liu3852/emdb/38622.map.gz",
         "sequences": [
             {
@@ -741,8 +741,8 @@
     {
         "name": "8y2i",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.92,
+        "contour_level": 0.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/38856.map.gz",
         "sequences": [
             {
@@ -782,8 +782,8 @@
     {
         "name": "8y5f",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.13,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/38933.map.gz",
         "sequences": [
             {
@@ -821,8 +821,8 @@
     {
         "name": "8y8n",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.12,
+        "contour_level": 0.33,
         "map_path": "/scratch/gautschi/liu3852/emdb/39052.map.gz",
         "sequences": [
             {
@@ -840,8 +840,8 @@
     {
         "name": "8y9e",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.95,
+        "contour_level": 0.274,
         "map_path": "/scratch/gautschi/liu3852/emdb/39075.map.gz",
         "sequences": [
             {
@@ -859,8 +859,8 @@
     {
         "name": "8y9m",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.76,
+        "contour_level": 0.335,
         "map_path": "/scratch/gautschi/liu3852/emdb/39083.map.gz",
         "sequences": [
             {
@@ -900,8 +900,8 @@
     {
         "name": "8yaa",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.34,
+        "contour_level": 0.02,
         "map_path": "/scratch/gautschi/liu3852/emdb/39093.map.gz",
         "sequences": [
             {
@@ -939,8 +939,8 @@
     {
         "name": "8yaq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.3,
+        "contour_level": 0.0384,
         "map_path": "/scratch/gautschi/liu3852/emdb/39104.map.gz",
         "sequences": [
             {
@@ -958,8 +958,8 @@
     {
         "name": "8yet",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.16,
+        "contour_level": 0.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/39203.map.gz",
         "sequences": [
             {
@@ -977,8 +977,8 @@
     {
         "name": "8yex",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.68,
+        "contour_level": 0.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/39204.map.gz",
         "sequences": [
             {
@@ -996,8 +996,8 @@
     {
         "name": "8ymr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.09,
+        "contour_level": 0.15,
         "map_path": "/scratch/gautschi/liu3852/emdb/39405.map.gz",
         "sequences": [
             {
@@ -1015,8 +1015,8 @@
     {
         "name": "8ynz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.41,
+        "contour_level": 0.097,
         "map_path": "/scratch/gautschi/liu3852/emdb/39432.map.gz",
         "sequences": [
             {
@@ -1034,8 +1034,8 @@
     {
         "name": "8yu7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.01,
+        "contour_level": 0.35,
         "map_path": "/scratch/gautschi/liu3852/emdb/39573.map.gz",
         "sequences": [
             {
@@ -1053,8 +1053,8 @@
     {
         "name": "8yvu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.9,
+        "contour_level": 1.03,
         "map_path": "/scratch/gautschi/liu3852/emdb/39614.map.gz",
         "sequences": [
             {
@@ -1092,8 +1092,8 @@
     {
         "name": "8yzp",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.16,
+        "contour_level": 0.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/39697.map.gz",
         "sequences": [
             {
@@ -1111,8 +1111,8 @@
     {
         "name": "8z0q",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.6,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/39711.map.gz",
         "sequences": [
             {
@@ -1130,8 +1130,8 @@
     {
         "name": "8z1f",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.3,
+        "contour_level": 0.0083,
         "map_path": "/scratch/gautschi/liu3852/emdb/39726.map.gz",
         "sequences": [
             {
@@ -1159,8 +1159,8 @@
     {
         "name": "8z21",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.17,
+        "contour_level": 0.07,
         "map_path": "/scratch/gautschi/liu3852/emdb/39742.map.gz",
         "sequences": [
             {
@@ -1208,8 +1208,8 @@
     {
         "name": "8zaj",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.0,
+        "contour_level": 0.0447,
         "map_path": "/scratch/gautschi/liu3852/emdb/39878.map.gz",
         "sequences": [
             {
@@ -1227,8 +1227,8 @@
     {
         "name": "8zeo",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.79,
+        "contour_level": 0.44,
         "map_path": "/scratch/gautschi/liu3852/emdb/60041.map.gz",
         "sequences": [
             {
@@ -1256,8 +1256,8 @@
     {
         "name": "8zeq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.36,
+        "contour_level": 0.3,
         "map_path": "/scratch/gautschi/liu3852/emdb/60043.map.gz",
         "sequences": [
             {
@@ -1275,8 +1275,8 @@
     {
         "name": "8zl4",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.65,
+        "contour_level": 0.211,
         "map_path": "/scratch/gautschi/liu3852/emdb/60218.map.gz",
         "sequences": [
             {
@@ -1294,8 +1294,8 @@
     {
         "name": "8zoo",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.14,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/60314.map.gz",
         "sequences": [
             {
@@ -1313,8 +1313,8 @@
     {
         "name": "8zpi",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.12,
+        "contour_level": 0.057,
         "map_path": "/scratch/gautschi/liu3852/emdb/60345.map.gz",
         "sequences": [
             {
@@ -1332,8 +1332,8 @@
     {
         "name": "8zpw",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.0,
+        "contour_level": 0.01,
         "map_path": "/scratch/gautschi/liu3852/emdb/60365.map.gz",
         "sequences": [
             {
@@ -1361,8 +1361,8 @@
     {
         "name": "8zqc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.4,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/60382.map.gz",
         "sequences": [
             {
@@ -1402,8 +1402,8 @@
     {
         "name": "8zqd",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.21,
+        "contour_level": 0.0176,
         "map_path": "/scratch/gautschi/liu3852/emdb/60383.map.gz",
         "sequences": [
             {
@@ -1421,8 +1421,8 @@
     {
         "name": "8zqh",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.12,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/60385.map.gz",
         "sequences": [
             {
@@ -1462,8 +1462,8 @@
     {
         "name": "8zry",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.23,
+        "contour_level": 0.53,
         "map_path": "/scratch/gautschi/liu3852/emdb/60409.map.gz",
         "sequences": [
             {
@@ -1481,8 +1481,8 @@
     {
         "name": "8ztw",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.6,
+        "contour_level": 0.056,
         "map_path": "/scratch/gautschi/liu3852/emdb/60475.map.gz",
         "sequences": [
             {
@@ -1500,8 +1500,8 @@
     {
         "name": "8zty",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.85,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/60476.map.gz",
         "sequences": [
             {
@@ -1529,8 +1529,8 @@
     {
         "name": "8zu0",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.16,
+        "contour_level": 0.0187,
         "map_path": "/scratch/gautschi/liu3852/emdb/60477.map.gz",
         "sequences": [
             {
@@ -1548,8 +1548,8 @@
     {
         "name": "8zu1",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.84,
+        "contour_level": 0.073,
         "map_path": "/scratch/gautschi/liu3852/emdb/60478.map.gz",
         "sequences": [
             {
@@ -1567,8 +1567,8 @@
     {
         "name": "8zue",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/60482.map.gz",
         "sequences": [
             {
@@ -1596,8 +1596,8 @@
     {
         "name": "8zxk",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.76,
+        "contour_level": 0.31,
         "map_path": "/scratch/gautschi/liu3852/emdb/60542.map.gz",
         "sequences": [
             {
@@ -1615,8 +1615,8 @@
     {
         "name": "8zxm",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.39,
+        "contour_level": 0.6,
         "map_path": "/scratch/gautschi/liu3852/emdb/60544.map.gz",
         "sequences": [
             {
@@ -1634,8 +1634,8 @@
     {
         "name": "9asc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.96,
+        "contour_level": 0.103,
         "map_path": "/scratch/gautschi/liu3852/emdb/43812.map.gz",
         "sequences": [
             {
@@ -1653,8 +1653,8 @@
     {
         "name": "9avi",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.02,
+        "contour_level": 0.09,
         "map_path": "/scratch/gautschi/liu3852/emdb/43902.map.gz",
         "sequences": [
             {
@@ -1672,8 +1672,8 @@
     {
         "name": "9b0l",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.99,
+        "contour_level": 0.3,
         "map_path": "/scratch/gautschi/liu3852/emdb/44046.map.gz",
         "sequences": [
             {
@@ -1719,8 +1719,8 @@
     {
         "name": "9b6c",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.35,
+        "contour_level": 0.121,
         "map_path": "/scratch/gautschi/liu3852/emdb/44253.map.gz",
         "sequences": [
             {
@@ -1738,8 +1738,8 @@
     {
         "name": "9b6m",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.14,
         "map_path": "/scratch/gautschi/liu3852/emdb/44266.map.gz",
         "sequences": [
             {
@@ -1767,8 +1767,8 @@
     {
         "name": "9b79",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.71,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/44304.map.gz",
         "sequences": [
             {
@@ -1786,8 +1786,8 @@
     {
         "name": "9b7z",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.5,
+        "contour_level": 0.0012,
         "map_path": "/scratch/gautschi/liu3852/emdb/44329.map.gz",
         "sequences": [
             {
@@ -1805,8 +1805,8 @@
     {
         "name": "9b87",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.65,
+        "contour_level": 0.25,
         "map_path": "/scratch/gautschi/liu3852/emdb/44334.map.gz",
         "sequences": [
             {
@@ -1824,8 +1824,8 @@
     {
         "name": "9be8",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.14,
+        "contour_level": 0.11,
         "map_path": "/scratch/gautschi/liu3852/emdb/44473.map.gz",
         "sequences": [
             {
@@ -1843,8 +1843,8 @@
     {
         "name": "9bfr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.19,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/44504.map.gz",
         "sequences": [
             {
@@ -1862,8 +1862,8 @@
     {
         "name": "9bgg",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.4,
+        "contour_level": 0.063,
         "map_path": "/scratch/gautschi/liu3852/emdb/44512.map.gz",
         "sequences": [
             {
@@ -1881,8 +1881,8 @@
     {
         "name": "9bgs",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.18,
+        "contour_level": 1.0,
         "map_path": "/scratch/gautschi/liu3852/emdb/44521.map.gz",
         "sequences": [
             {
@@ -1900,8 +1900,8 @@
     {
         "name": "9bh4",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.55,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/44532.map.gz",
         "sequences": [
             {
@@ -1919,8 +1919,8 @@
     {
         "name": "9bim",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.67,
+        "contour_level": 1.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/44593.map.gz",
         "sequences": [
             {
@@ -1938,8 +1938,8 @@
     {
         "name": "9bkv",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.43,
+        "contour_level": 1.0,
         "map_path": "/scratch/gautschi/liu3852/emdb/44646.map.gz",
         "sequences": [
             {
@@ -1957,8 +1957,8 @@
     {
         "name": "9bpu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.26,
+        "contour_level": 0.012,
         "map_path": "/scratch/gautschi/liu3852/emdb/44790.map.gz",
         "sequences": [
             {
@@ -1996,8 +1996,8 @@
     {
         "name": "9bvl",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.4,
+        "contour_level": 0.07,
         "map_path": "/scratch/gautschi/liu3852/emdb/44936.map.gz",
         "sequences": [
             {
@@ -2025,8 +2025,8 @@
     {
         "name": "9c0f",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.6,
+        "contour_level": 0.004,
         "map_path": "/scratch/gautschi/liu3852/emdb/45082.map.gz",
         "sequences": [
             {
@@ -2056,8 +2056,8 @@
     {
         "name": "9c51",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.42,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/45194.map.gz",
         "sequences": [
             {
@@ -2093,8 +2093,8 @@
     {
         "name": "9c6j",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.41,
+        "contour_level": 0.15,
         "map_path": "/scratch/gautschi/liu3852/emdb/45248.map.gz",
         "sequences": [
             {
@@ -2112,8 +2112,8 @@
     {
         "name": "9c9l",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.7,
+        "contour_level": 5.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/45363.map.gz",
         "sequences": [
             {
@@ -2151,8 +2151,8 @@
     {
         "name": "9cag",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.33,
+        "contour_level": 0.17,
         "map_path": "/scratch/gautschi/liu3852/emdb/45390.map.gz",
         "sequences": [
             {
@@ -2190,8 +2190,8 @@
     {
         "name": "9cby",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.31,
+        "contour_level": 3.0,
         "map_path": "/scratch/gautschi/liu3852/emdb/42498.map.gz",
         "sequences": [
             {
@@ -2209,8 +2209,8 @@
     {
         "name": "9cfl",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.3,
+        "contour_level": 0.44,
         "map_path": "/scratch/gautschi/liu3852/emdb/45550.map.gz",
         "sequences": [
             {
@@ -2238,8 +2238,8 @@
     {
         "name": "9cr4",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.81,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/45832.map.gz",
         "sequences": [
             {
@@ -2257,8 +2257,8 @@
     {
         "name": "9dii",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.0,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/46906.map.gz",
         "sequences": [
             {
@@ -2276,8 +2276,8 @@
     {
         "name": "9dis",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.51,
+        "contour_level": 0.748,
         "map_path": "/scratch/gautschi/liu3852/emdb/46917.map.gz",
         "sequences": [
             {
@@ -2305,8 +2305,8 @@
     {
         "name": "9do0",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.54,
+        "contour_level": 0.422,
         "map_path": "/scratch/gautschi/liu3852/emdb/47070.map.gz",
         "sequences": [
             {
@@ -2324,8 +2324,8 @@
     {
         "name": "9dp9",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.1,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/47099.map.gz",
         "sequences": [
             {
@@ -2343,8 +2343,8 @@
     {
         "name": "9du5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.45,
+        "contour_level": 4.5,
         "map_path": "/scratch/gautschi/liu3852/emdb/47167.map.gz",
         "sequences": [
             {
@@ -2362,8 +2362,8 @@
     {
         "name": "9dvq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/47215.map.gz",
         "sequences": [
             {
@@ -2391,8 +2391,8 @@
     {
         "name": "9dwu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.14,
+        "contour_level": 0.07,
         "map_path": "/scratch/gautschi/liu3852/emdb/47265.map.gz",
         "sequences": [
             {
@@ -2430,8 +2430,8 @@
     {
         "name": "9e5g",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.07,
+        "contour_level": 0.34,
         "map_path": "/scratch/gautschi/liu3852/emdb/47526.map.gz",
         "sequences": [
             {
@@ -2449,8 +2449,8 @@
     {
         "name": "9e6h",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.84,
+        "contour_level": 0.07,
         "map_path": "/scratch/gautschi/liu3852/emdb/47565.map.gz",
         "sequences": [
             {
@@ -2468,8 +2468,8 @@
     {
         "name": "9e7j",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.98,
+        "contour_level": 0.235,
         "map_path": "/scratch/gautschi/liu3852/emdb/47678.map.gz",
         "sequences": [
             {
@@ -2487,8 +2487,8 @@
     {
         "name": "9ef0",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.33,
+        "contour_level": 0.06,
         "map_path": "/scratch/gautschi/liu3852/emdb/40857.map.gz",
         "sequences": [
             {
@@ -2506,8 +2506,8 @@
     {
         "name": "9efu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.92,
+        "contour_level": 0.0254,
         "map_path": "/scratch/gautschi/liu3852/emdb/47980.map.gz",
         "sequences": [
             {
@@ -2535,8 +2535,8 @@
     {
         "name": "9ely",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.9,
+        "contour_level": 9.0,
         "map_path": "/scratch/gautschi/liu3852/emdb/48162.map.gz",
         "sequences": [
             {
@@ -2554,8 +2554,8 @@
     {
         "name": "9enr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/19842.map.gz",
         "sequences": [
             {
@@ -2573,8 +2573,8 @@
     {
         "name": "9etm",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.35,
+        "contour_level": 0.11,
         "map_path": "/scratch/gautschi/liu3852/emdb/19944.map.gz",
         "sequences": [
             {
@@ -2632,8 +2632,8 @@
     {
         "name": "9evc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.73,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/19998.map.gz",
         "sequences": [
             {
@@ -2651,8 +2651,8 @@
     {
         "name": "9ewy",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.01,
         "map_path": "/scratch/gautschi/liu3852/emdb/50026.map.gz",
         "sequences": [
             {
@@ -2670,8 +2670,8 @@
     {
         "name": "9ex4",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.19,
+        "contour_level": 0.008,
         "map_path": "/scratch/gautschi/liu3852/emdb/50030.map.gz",
         "sequences": [
             {
@@ -2689,8 +2689,8 @@
     {
         "name": "9exk",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.36,
+        "contour_level": 0.08,
         "map_path": "/scratch/gautschi/liu3852/emdb/50040.map.gz",
         "sequences": [
             {
@@ -2708,8 +2708,8 @@
     {
         "name": "9eyo",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.86,
+        "contour_level": 0.91,
         "map_path": "/scratch/gautschi/liu3852/emdb/50059.map.gz",
         "sequences": [
             {
@@ -2727,8 +2727,8 @@
     {
         "name": "9f0l",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.76,
+        "contour_level": 0.08,
         "map_path": "/scratch/gautschi/liu3852/emdb/50113.map.gz",
         "sequences": [
             {
@@ -2746,8 +2746,8 @@
     {
         "name": "9f1r",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.67,
+        "contour_level": 0.3,
         "map_path": "/scratch/gautschi/liu3852/emdb/50135.map.gz",
         "sequences": [
             {
@@ -2775,8 +2775,8 @@
     {
         "name": "9f6p",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.7,
+        "contour_level": 0.25,
         "map_path": "/scratch/gautschi/liu3852/emdb/50237.map.gz",
         "sequences": [
             {
@@ -2794,8 +2794,8 @@
     {
         "name": "9fcv",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.09,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/50322.map.gz",
         "sequences": [
             {
@@ -2823,8 +2823,8 @@
     {
         "name": "9fgz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.28,
         "map_path": "/scratch/gautschi/liu3852/emdb/50434.map.gz",
         "sequences": [
             {
@@ -2842,8 +2842,8 @@
     {
         "name": "9fka",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.96,
+        "contour_level": 0.0657,
         "map_path": "/scratch/gautschi/liu3852/emdb/50520.map.gz",
         "sequences": [
             {
@@ -2871,8 +2871,8 @@
     {
         "name": "9fl7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.3,
+        "contour_level": 0.8,
         "map_path": "/scratch/gautschi/liu3852/emdb/50532.map.gz",
         "sequences": [
             {
@@ -2900,8 +2900,8 @@
     {
         "name": "9frx",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.67,
+        "contour_level": 0.35,
         "map_path": "/scratch/gautschi/liu3852/emdb/50552.map.gz",
         "sequences": [
             {
@@ -2919,8 +2919,8 @@
     {
         "name": "9fz5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.57,
+        "contour_level": 0.3,
         "map_path": "/scratch/gautschi/liu3852/emdb/50893.map.gz",
         "sequences": [
             {
@@ -2958,8 +2958,8 @@
     {
         "name": "9g7c",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.27,
+        "contour_level": 0.075,
         "map_path": "/scratch/gautschi/liu3852/emdb/51119.map.gz",
         "sequences": [
             {
@@ -2977,8 +2977,8 @@
     {
         "name": "9g7f",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.93,
+        "contour_level": 0.0035,
         "map_path": "/scratch/gautschi/liu3852/emdb/51121.map.gz",
         "sequences": [
             {
@@ -3006,8 +3006,8 @@
     {
         "name": "9g9v",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.32,
+        "contour_level": 0.175,
         "map_path": "/scratch/gautschi/liu3852/emdb/51158.map.gz",
         "sequences": [
             {
@@ -3025,8 +3025,8 @@
     {
         "name": "9gd8",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.3,
+        "contour_level": 0.028,
         "map_path": "/scratch/gautschi/liu3852/emdb/51250.map.gz",
         "sequences": [
             {
@@ -3044,8 +3044,8 @@
     {
         "name": "9h1z",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.3,
+        "contour_level": 0.513,
         "map_path": "/scratch/gautschi/liu3852/emdb/51786.map.gz",
         "sequences": [
             {
@@ -3063,8 +3063,8 @@
     {
         "name": "9hjc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.1,
+        "contour_level": 1.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/52212.map.gz",
         "sequences": [
             {
@@ -3082,8 +3082,8 @@
     {
         "name": "9hkw",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.85,
+        "contour_level": 0.06,
         "map_path": "/scratch/gautschi/liu3852/emdb/52238.map.gz",
         "sequences": [
             {
@@ -3101,8 +3101,8 @@
     {
         "name": "9ii6",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.27,
+        "contour_level": 0.33,
         "map_path": "/scratch/gautschi/liu3852/emdb/60591.map",
         "sequences": [
             {
@@ -3140,8 +3140,8 @@
     {
         "name": "9im6",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.21,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/60685.map.gz",
         "sequences": [
             {
@@ -3169,8 +3169,8 @@
     {
         "name": "9is7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.87,
+        "contour_level": 0.025,
         "map_path": "/scratch/gautschi/liu3852/emdb/60833.map.gz",
         "sequences": [
             {
@@ -3198,8 +3198,8 @@
     {
         "name": "9ivc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.17,
+        "contour_level": 0.37,
         "map_path": "/scratch/gautschi/liu3852/emdb/60924.map.gz",
         "sequences": [
             {
@@ -3237,8 +3237,8 @@
     {
         "name": "9izu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.7,
+        "contour_level": 0.06,
         "map_path": "/scratch/gautschi/liu3852/emdb/61042.map.gz",
         "sequences": [
             {
@@ -3256,8 +3256,8 @@
     {
         "name": "9j03",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.35,
         "map_path": "/scratch/gautschi/liu3852/emdb/61047.map.gz",
         "sequences": [
             {
@@ -3285,8 +3285,8 @@
     {
         "name": "9j60",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.35,
         "map_path": "/scratch/gautschi/liu3852/emdb/61158.map.gz",
         "sequences": [
             {
@@ -3304,8 +3304,8 @@
     {
         "name": "9j7c",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.0,
+        "contour_level": 0.175,
         "map_path": "/scratch/gautschi/liu3852/emdb/61201.map.gz",
         "sequences": [
             {
@@ -3323,8 +3323,8 @@
     {
         "name": "9j7u",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.14,
+        "contour_level": 0.355,
         "map_path": "/scratch/gautschi/liu3852/emdb/61210.map.gz",
         "sequences": [
             {
@@ -3342,8 +3342,8 @@
     {
         "name": "9j8v",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.12,
         "map_path": "/scratch/gautschi/liu3852/emdb/61241.map.gz",
         "sequences": [
             {
@@ -3361,8 +3361,8 @@
     {
         "name": "9jaq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.99,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/61300.map.gz",
         "sequences": [
             {
@@ -3380,8 +3380,8 @@
     {
         "name": "9jdc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.33,
+        "contour_level": 0.34,
         "map_path": "/scratch/gautschi/liu3852/emdb/61388.map.gz",
         "sequences": [
             {
@@ -3399,8 +3399,8 @@
     {
         "name": "9jk3",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.45,
+        "contour_level": 0.285,
         "map_path": "/scratch/gautschi/liu3852/emdb/61542.map.gz",
         "sequences": [
             {
@@ -3418,8 +3418,8 @@
     {
         "name": "9kpo",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.98,
+        "contour_level": 0.08,
         "map_path": "/scratch/gautschi/liu3852/emdb/62489.map.gz",
         "sequences": [
             {
@@ -3437,8 +3437,8 @@
     {
         "name": "9kqi",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.02,
+        "contour_level": 0.543,
         "map_path": "/scratch/gautschi/liu3852/emdb/62505.map.gz",
         "sequences": [
             {
@@ -3456,8 +3456,8 @@
     {
         "name": "9kus",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.42,
+        "contour_level": 0.08,
         "map_path": "/scratch/gautschi/liu3852/emdb/62579.map.gz",
         "sequences": [
             {
@@ -3475,8 +3475,8 @@
     {
         "name": "9l0d",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.41,
+        "contour_level": 0.459,
         "map_path": "/scratch/gautschi/liu3852/emdb/62697.map.gz",
         "sequences": [
             {
@@ -3524,8 +3524,8 @@
     {
         "name": "9lgw",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.4,
         "map_path": "/scratch/gautschi/liu3852/emdb/63074.map.gz",
         "sequences": [
             {
@@ -3553,8 +3553,8 @@
     {
         "name": "9luc",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.5,
+        "contour_level": 0.21,
         "map_path": "/scratch/gautschi/liu3852/emdb/63394.map.gz",
         "sequences": [
             {
@@ -3582,8 +3582,8 @@
     {
         "name": "9lyd",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.66,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/63522.map.gz",
         "sequences": [
             {
@@ -3601,8 +3601,8 @@
     {
         "name": "9m0s",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.5,
+        "contour_level": 0.15,
         "map_path": "/scratch/gautschi/liu3852/emdb/63562.map.gz",
         "sequences": [
             {
@@ -3620,8 +3620,8 @@
     {
         "name": "9mk9",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.22,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/48323.map.gz",
         "sequences": [
             {
@@ -3649,8 +3649,8 @@
     {
         "name": "9mqu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.59,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/48540.map.gz",
         "sequences": [
             {
@@ -3668,8 +3668,8 @@
     {
         "name": "9mqy",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.0,
+        "contour_level": 0.045,
         "map_path": "/scratch/gautschi/liu3852/emdb/48544.map.gz",
         "sequences": [
             {
@@ -3687,8 +3687,8 @@
     {
         "name": "9mty",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.05,
+        "contour_level": 0.025,
         "map_path": "/scratch/gautschi/liu3852/emdb/48616.map.gz",
         "sequences": [
             {
@@ -3740,8 +3740,8 @@
     {
         "name": "9n0x",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.3,
+        "contour_level": 0.162,
         "map_path": "/scratch/gautschi/liu3852/emdb/48797.map.gz",
         "sequences": [
             {
@@ -3759,8 +3759,8 @@
     {
         "name": "9nl2",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.0279,
         "map_path": "/scratch/gautschi/liu3852/emdb/49515.map.gz",
         "sequences": [
             {
@@ -3806,8 +3806,8 @@
     {
         "name": "9nlx",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/49525.map.gz",
         "sequences": [
             {
@@ -3835,8 +3835,8 @@
     {
         "name": "9nos",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.5,
+        "contour_level": 0.22,
         "map_path": "/scratch/gautschi/liu3852/emdb/49612.map.gz",
         "sequences": [
             {
@@ -3864,8 +3864,8 @@
     {
         "name": "9now",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.16,
         "map_path": "/scratch/gautschi/liu3852/emdb/49619.map.gz",
         "sequences": [
             {
@@ -3893,8 +3893,8 @@
     {
         "name": "9nvu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.71,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/49856.map.gz",
         "sequences": [
             {
@@ -3934,8 +3934,8 @@
     {
         "name": "9nyi",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 1.98,
+        "contour_level": 0.0386,
         "map_path": "/scratch/gautschi/liu3852/emdb/49920.map.gz",
         "sequences": [
             {
@@ -3959,8 +3959,8 @@
     {
         "name": "9qh3",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.4,
+        "contour_level": 0.058,
         "map_path": "/scratch/gautschi/liu3852/emdb/53153.map.gz",
         "sequences": [
             {
@@ -3988,8 +3988,8 @@
     {
         "name": "9qq6",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.45,
+        "contour_level": 0.06,
         "map_path": "/scratch/gautschi/liu3852/emdb/53294.map.gz",
         "sequences": [
             {
@@ -4017,8 +4017,8 @@
     {
         "name": "9ueq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.2,
+        "contour_level": 0.0392,
         "map_path": "/scratch/gautschi/liu3852/emdb/64089.map.gz",
         "sequences": [
             {
@@ -4036,8 +4036,8 @@
     {
         "name": "8ps5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.84,
+        "contour_level": 0.0799,
         "map_path": "/scratch/gautschi/liu3852/emdb/17845.map.gz",
         "sequences": [
             {
@@ -4061,8 +4061,8 @@
     {
         "name": "8rw5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.94,
+        "contour_level": 0.182,
         "map_path": "/scratch/gautschi/liu3852/emdb/19543.map.gz",
         "sequences": [
             {
@@ -4080,8 +4080,8 @@
     {
         "name": "8urt",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.1,
+        "contour_level": 0.434,
         "map_path": "/scratch/gautschi/liu3852/emdb/42500.map.gz",
         "sequences": [
             {
@@ -4099,8 +4099,8 @@
     {
         "name": "8xtr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.67,
+        "contour_level": 0.0268,
         "map_path": "/scratch/gautschi/liu3852/emdb/38648.map.gz",
         "sequences": [
             {
@@ -4128,8 +4128,8 @@
     {
         "name": "8xw5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.56,
+        "contour_level": 0.193,
         "map_path": "/scratch/gautschi/liu3852/emdb/38731.map.gz",
         "sequences": [
             {
@@ -4147,8 +4147,8 @@
     {
         "name": "9b3h",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.0,
+        "contour_level": 0.0922,
         "map_path": "/scratch/gautschi/liu3852/emdb/44139.map.gz",
         "sequences": [
             {
@@ -4176,8 +4176,8 @@
     {
         "name": "9dci",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 4.07,
+        "contour_level": 0.7,
         "map_path": "/scratch/gautschi/liu3852/emdb/46752.map.gz",
         "sequences": [
             {
@@ -4195,8 +4195,8 @@
     {
         "name": "9ft7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.16,
+        "contour_level": 0.25,
         "map_path": "/scratch/gautschi/liu3852/emdb/50741.map.gz",
         "sequences": [
             {
@@ -4214,8 +4214,8 @@
     {
         "name": "9h78",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.7,
+        "contour_level": 0.002,
         "map_path": "/scratch/gautschi/liu3852/emdb/51913.map.gz",
         "sequences": [
             {
@@ -4243,8 +4243,8 @@
     {
         "name": "9hbw",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.59,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/52032.map.gz",
         "sequences": [
             {
@@ -4282,8 +4282,8 @@
     {
         "name": "9hnp",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 2.53,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/52311.map.gz",
         "sequences": [
             {
@@ -4301,8 +4301,8 @@
     {
         "name": "9iw3",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.58,
+        "contour_level": 0.11,
         "map_path": "/scratch/gautschi/liu3852/emdb/60944.map.gz",
         "sequences": [
             {
@@ -4338,8 +4338,8 @@
     {
         "name": "9jdr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.5,
+        "contour_level": 0.35,
         "map_path": "/scratch/gautschi/liu3852/emdb/61397.map.gz",
         "sequences": [
             {
@@ -4357,8 +4357,8 @@
     {
         "name": "9mmg",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.25,
+        "contour_level": 3.34,
         "map_path": "/scratch/gautschi/liu3852/emdb/48391.map.gz",
         "sequences": [
             {
@@ -4376,8 +4376,8 @@
     {
         "name": "9mw7",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 3.4,
+        "contour_level": 0.08,
         "map_path": "/scratch/gautschi/liu3852/emdb/48691.map.gz",
         "sequences": [
             {
@@ -4415,8 +4415,8 @@
     {
         "name": "6pas",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.1,
+        "contour_level": 0.7,
         "map_path": "/scratch/gautschi/liu3852/emdb/20282.map.gz",
         "sequences": [
             {
@@ -4444,8 +4444,8 @@
     {
         "name": "6wlm",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 7.4,
+        "contour_level": 0.045,
         "map_path": "/scratch/gautschi/liu3852/emdb/21834.map.gz",
         "sequences": [
             {
@@ -4463,8 +4463,8 @@
     {
         "name": "6wln",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 10.0,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/21835.map.gz",
         "sequences": [
             {
@@ -4482,8 +4482,8 @@
     {
         "name": "6wlu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.7,
+        "contour_level": 0.2,
         "map_path": "/scratch/gautschi/liu3852/emdb/21842.map.gz",
         "sequences": [
             {
@@ -4501,8 +4501,8 @@
     {
         "name": "6xrz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.9,
+        "contour_level": 0.007,
         "map_path": "/scratch/gautschi/liu3852/emdb/22296.map.gz",
         "sequences": [
             {
@@ -4520,8 +4520,8 @@
     {
         "name": "7k2v",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.6,
+        "contour_level": 0.008,
         "map_path": "/scratch/gautschi/liu3852/emdb/22647.map.gz",
         "sequences": [
             {
@@ -4549,8 +4549,8 @@
     {
         "name": "7ljy",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.6,
+        "contour_level": 0.459,
         "map_path": "/scratch/gautschi/liu3852/emdb/23401.map.gz",
         "sequences": [
             {
@@ -4578,8 +4578,8 @@
     {
         "name": "7ptk",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.18,
+        "contour_level": 0.1,
         "map_path": "/scratch/gautschi/liu3852/emdb/13628.map.gz",
         "sequences": [
             {
@@ -4597,8 +4597,8 @@
     {
         "name": "7qdu",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.14,
+        "contour_level": 0.138,
         "map_path": "/scratch/gautschi/liu3852/emdb/13926.map.gz",
         "sequences": [
             {
@@ -4616,8 +4616,8 @@
     {
         "name": "7rdr",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.5,
+        "contour_level": 0.26,
         "map_path": "/scratch/gautschi/liu3852/emdb/24425.map.gz",
         "sequences": [
             {
@@ -4635,8 +4635,8 @@
     {
         "name": "7scq",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.0,
+        "contour_level": 0.0318,
         "map_path": "/scratch/gautschi/liu3852/emdb/25041.map.gz",
         "sequences": [
             {
@@ -4664,8 +4664,8 @@
     {
         "name": "8b2x",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 8.0,
+        "contour_level": 0.0044,
         "map_path": "/scratch/gautschi/liu3852/emdb/15820.map.gz",
         "sequences": [
             {
@@ -4683,8 +4683,8 @@
     {
         "name": "8btz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.39,
+        "contour_level": 0.124,
         "map_path": "/scratch/gautschi/liu3852/emdb/16244.map.gz",
         "sequences": [
             {
@@ -4702,8 +4702,8 @@
     {
         "name": "8qo2",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 7.1,
+        "contour_level": 0.03,
         "map_path": "/scratch/gautschi/liu3852/emdb/18520.map.gz",
         "sequences": [
             {
@@ -4721,8 +4721,8 @@
     {
         "name": "8qo3",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.6,
+        "contour_level": 0.05,
         "map_path": "/scratch/gautschi/liu3852/emdb/18521.map.gz",
         "sequences": [
             {
@@ -4740,8 +4740,8 @@
     {
         "name": "8qo5",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.5,
+        "contour_level": 0.04,
         "map_path": "/scratch/gautschi/liu3852/emdb/18523.map.gz",
         "sequences": [
             {
@@ -4759,8 +4759,8 @@
     {
         "name": "8tvz",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.94,
+        "contour_level": 0.0846,
         "map_path": "/scratch/gautschi/liu3852/emdb/41656.map.gz",
         "sequences": [
             {
@@ -4778,8 +4778,8 @@
     {
         "name": "8uyj",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 7.3,
+        "contour_level": 0.25,
         "map_path": "/scratch/gautschi/liu3852/emdb/42808.map.gz",
         "sequences": [
             {
@@ -4797,8 +4797,8 @@
     {
         "name": "6wlk",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 10.0,
+        "contour_level": 0.06,
         "map_path": "/scratch/gautschi/liu3852/emdb/21832.map.gz",
         "sequences": [
             {
@@ -4816,8 +4816,8 @@
     {
         "name": "7pts",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.71,
+        "contour_level": 0.366,
         "map_path": "/scratch/gautschi/liu3852/emdb/13636.map.gz",
         "sequences": [
             {
@@ -4835,8 +4835,8 @@
     {
         "name": "8bu8",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.56,
+        "contour_level": 0.0104,
         "map_path": "/scratch/gautschi/liu3852/emdb/16245.map.gz",
         "sequences": [
             {
@@ -4854,8 +4854,8 @@
     {
         "name": "8sa6",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 5.3,
+        "contour_level": 0.169,
         "map_path": "/scratch/gautschi/liu3852/emdb/40266.map.gz",
         "sequences": [
             {
@@ -4873,8 +4873,8 @@
     {
         "name": "9fch",
         "modelSeeds": [],
-        "resolution": null,
-        "contour_level": null,
+        "resolution": 6.52,
+        "contour_level": 0.226,
         "map_path": "/scratch/gautschi/liu3852/emdb/50314.map.gz",
         "sequences": [
             {
