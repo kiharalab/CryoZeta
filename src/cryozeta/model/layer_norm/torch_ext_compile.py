@@ -88,5 +88,5 @@ def compile(name, sources, extra_include_paths, build_directory):
             *gencode_flags,
         ],
         verbose=True,
-        buildDirectory=env_build_dir,
+        build_directory=env_build_dir,
     )
