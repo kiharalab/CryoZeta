@@ -157,7 +157,7 @@ viewers such as ChimeraX or PyMOL.
 #### Reference
 
 <details>
-<summary>## Development</summary>
+<summary><strong>## Development</strong></summary>
 
 ### Install dev dependencies
 
