@@ -137,7 +137,7 @@ export CUTLASS_PATH="${SCRIPT_DIR}/.pixi/envs/${PIXI_ENV}"
 # ─── 2. Download CryoZeta model weights ─────────────────────────────────────
 
 echo "==> Downloading CryoZeta model weights..."
-hf download "KiharaLab/CryoZeta" \
+pixi run -e "${PIXI_ENV}" hf download "KiharaLab/CryoZeta" \
     --repo-type model \
     --local-dir "assets"
 
