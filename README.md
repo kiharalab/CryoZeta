@@ -2,7 +2,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![CUDA](https://img.shields.io/badge/CUDA-12.6-blue?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
-[![uv](https://img.shields.io/badge/uv-0.5-blue?logo=astral)](https://github.com/astral-sh/uv)
+[![CUDA 13](https://img.shields.io/badge/CUDA-13-blue?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![pixi](https://img.shields.io/badge/pixi-0.41.1-blue?logo=pixi)](https://pixi.sh)
 [![Ruff](https://img.shields.io/badge/Ruff-0.15.1-yellow?logo=ruff)](https://github.com/astral-sh/ruff)
 [![prek](https://img.shields.io/badge/prek-0.3.2-green?logo=git)](https://github.com/kawarabiyu/prek)
 
@@ -21,15 +22,15 @@ Estimated time: < 15 minutes
 
 ### Hardware Requirements
 
-- CUDA-capable GPU with 32 GB memory or more and CUDA 12.6
+- CUDA-capable GPU with 32 GB memory or more (CUDA 12.0 or higher)
 
-### 1. Install uv (fast Python package manager)
+### 1. Install pixi (modern package manager)
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -fsSL https://pixi.sh/install.sh | bash
 ```
 
-Or visit https://docs.astral.sh/uv/getting-started/installation/ for other installation methods.
+Or visit https://pixi.sh/latest/#installation for other installation methods.
 
 ### 2. Clone and set up the project
 
@@ -154,10 +155,10 @@ top-ranked predicted structures selected from both the standard and interpolatio
 models. Each structure is in **mmCIF** format and can be opened with molecular
 viewers such as ChimeraX or PyMOL.
 
-#### Reference
+## Development
 
 <details>
-<summary><strong>## Development</strong></summary>
+<summary><b>Development Instructions</b></summary>
 
 ### Install dev dependencies
 
