@@ -141,7 +141,6 @@ experiments/
 
 # pixi environments
 .pixi
-pixi.lock
 *.egg-info
 
 */components.v20240608.cif
