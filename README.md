@@ -1,7 +1,7 @@
 # CryoZeta Inference
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
-[![CUDA](https://img.shields.io/badge/CUDA-12%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![CUDA](https://img.shields.io/badge/CUDA-11%20%7C%2012%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![pixi](https://img.shields.io/badge/pixi-0.41.1-blue?logo=pixi)](https://pixi.sh)
 [![Ruff](https://img.shields.io/badge/Ruff-0.15.1-yellow?logo=ruff)](https://github.com/astral-sh/ruff)
 [![prek](https://img.shields.io/badge/prek-0.3.2-green?logo=git)](https://github.com/kawarabiyu/prek)
@@ -21,7 +21,8 @@ Estimated time: < 15 minutes
 
 ### Hardware Requirements
 
-- CUDA-capable GPU with 32 GB memory or more (CUDA 12.0 or higher)
+- CUDA-capable GPU with 32 GB memory or more
+- NVIDIA driver that supports CUDA 11.0 or higher (check with `nvidia-smi`)
 
 ### 1. Install pixi
 
@@ -42,9 +43,71 @@ pixi run setup
 The setup command automatically:
 
 1. Installs all dependencies (Python, CUDA, C++ libraries, etc.).
-2. Detects your GPU and selects the matching CUDA version (12 or 13).
+2. Detects your GPU and selects the matching CUDA version (11, 12, or 13).
 3. Downloads CryoZeta model weights from Hugging Face.
 4. Clones and builds [TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus).
+
+### CUDA Environment Selection
+
+CryoZeta ships three CUDA environments. During setup and inference the correct
+one is **auto-detected** from two properties of your system:
+
+| Property | How it is read | What it controls |
+|----------|---------------|-----------------|
+| **Driver-supported CUDA version** | `nvidia-smi` "CUDA Version" field | Hard upper bound -- the driver cannot run a newer CUDA toolkit than this. |
+| **GPU compute capability** | `nvidia-smi --query-gpu=compute_cap` | Architectural eligibility -- very old GPUs are not supported by newer CUDA releases. |
+
+The auto-detection logic combines both:
+
+| Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch |
+|---|---|---|---|---|
+| >= 10.0 (Blackwell) | >= 13 | `cu13` | 13.x | >= 2.7 |
+| >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | >= 2.7 |
+| < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | >= 2.0, < 2.5 |
+
+> **Tip:** Run `nvidia-smi` to see both the driver version and the maximum CUDA
+> version your driver supports. The "CUDA Version" shown by `nvidia-smi` is the
+> **ceiling** -- you can install any CUDA toolkit up to that version.
+
+#### Manual Override
+
+If you need to use a specific CUDA version (e.g. your driver supports CUDA 12
+but you want to test with CUDA 11), you can override the auto-detection by
+entering a pixi shell for the desired environment:
+
+```bash
+# Enter the CUDA 11 environment
+pixi shell -e cu11
+
+# Enter the CUDA 13 environment
+pixi shell -e cu13
+
+# Enter the default (CUDA 12) environment
+pixi shell
+```
+
+Once inside the shell, all commands (including `sh inference_demo.sh`) will use
+the environment you selected. You can also target an environment directly
+without entering a shell:
+
+```bash
+# Run a single command in the CUDA 11 environment
+pixi run -e cu11 cryozeta-detection json-run examples/example.json output/example --device cuda
+
+# Install a specific environment
+pixi install -e cu11
+```
+
+Available environments:
+
+| Environment | CUDA | Description |
+|-------------|------|-------------|
+| `default` | 12 | Default environment (CUDA 12.8) |
+| `cu11` | 11 | CUDA 11.8 with PyTorch < 2.5 |
+| `cu13` | 13 | CUDA 13.x for Blackwell GPUs |
+| `dev` | 12 | Development (CUDA 12 + linting tools) |
+| `dev-cu11` | 11 | Development (CUDA 11 + linting tools) |
+| `dev-cu13` | 13 | Development (CUDA 13 + linting tools) |
 
 ## Usage
 
@@ -54,7 +117,7 @@ The setup command automatically:
 sh inference_demo.sh
 ```
 
-This runs the full CryoZeta pipeline on the bundled example (`examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU.
+This runs the full CryoZeta pipeline on the bundled example (`examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU and driver.
 
 ### Prepare Input JSON
 

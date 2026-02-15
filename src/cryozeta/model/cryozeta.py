@@ -36,6 +36,7 @@ from cryozeta.utils.torch_utils import autocasting_disable_decorator
 from .modules.confidence import ConfidenceHead
 from .modules.diffusion import DiffusionModule
 from .modules.embedders import InputFeatureEmbedder, RelativePositionEncoding
+from .modules.empairformer import EMPairformerStack, MSAModule, TemplateEmbedder
 from .modules.fitting import (
     FitModelPoints,
     FitModelPointsTeaser,
@@ -44,7 +45,6 @@ from .modules.fitting import (
     SetPntResAffinity,
 )
 from .modules.head import DistogramHead, PointNoiseHead, PointResidueClassHead
-from .modules.empairformer import EMPairformerStack, MSAModule, TemplateEmbedder
 from .modules.primitives import LinearNoBias
 
 
@@ -439,7 +439,9 @@ class CryoZeta(nn.Module):
 
         step_trunk = time.time()
         time_tracker.update({"empairformer": step_trunk - step_st})
-        logger.info(f"EMPairformer done in {step_trunk - step_st:.1f}s. Starting diffusion sampling...")
+        logger.info(
+            f"EMPairformer done in {step_trunk - step_st:.1f}s. Starting diffusion sampling..."
+        )
         # Sample diffusion
         # [..., N_sample, N_atom, 3]
         N_sample = self.configs.sample_diffusion["N_sample"]
@@ -461,7 +463,9 @@ class CryoZeta(nn.Module):
 
         step_diffusion = time.time()
         time_tracker.update({"diffusion": step_diffusion - step_trunk})
-        logger.info(f"Diffusion sampling done in {step_diffusion - step_trunk:.1f}s. Starting model fitting...")
+        logger.info(
+            f"Diffusion sampling done in {step_diffusion - step_trunk:.1f}s. Starting model fitting..."
+        )
         if N_token > 2000:
             torch.cuda.empty_cache()
 
@@ -681,7 +685,9 @@ class CryoZeta(nn.Module):
 
         # Confidence logits
         step_fitting = time.time()
-        logger.info(f"Model fitting done in {step_fitting - step_diffusion:.1f}s. Running confidence head...")
+        logger.info(
+            f"Model fitting done in {step_fitting - step_diffusion:.1f}s. Running confidence head..."
+        )
         (
             pred_dict["plddt"],
             pred_dict["pae"],
