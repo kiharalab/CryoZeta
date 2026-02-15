@@ -233,3 +233,21 @@ Please refer to the [Protenix repository](https://github.com/bytedance/Protenix)
 ```
 
 </details>
+
+<details>
+<summary>SmartFold</summary>
+
+```bibtex
+@article{smartfold2023,
+  title   = {SMARTFold: Structure Modeling from Atomic-Resolution cryo-EM Maps with Deep Learning},
+  author  = {Li, Peng and Guo, Liang and Liu, Haotian and Li, Bo and Ma, Feng and Ni, Xiang and Gao, Chao},
+  journal = {bioRxiv},
+  year    = {2023},
+  doi     = {10.1101/2023.11.02.565403},
+  url     = {https://www.biorxiv.org/content/10.1101/2023.11.02.565403v1},
+  eprint  = {https://www.biorxiv.org/content/10.1101/2023.11.02.565403v1.full.pdf},
+  publisher = {Cold Spring Harbor Laboratory}
+}
+```
+
+</details>
