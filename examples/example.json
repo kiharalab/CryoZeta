@@ -1,0 +1,49 @@
+[
+    {
+        "name": "9b0l",
+        "modelSeeds": [],
+        "map_path": "examples/emd_44046.map.gz",
+        "resolution": 2.99,
+        "contour_level": 0.3,
+        "sequences": [
+            {
+                "dnaSequence": {
+                    "sequence": "GACGGTCGGGC",
+                    "count": 1
+                }
+            },
+            {
+                "proteinChain": {
+                    "sequence": "MKEAVKNVKPKVPAKKRIITGSKTKKKVFVKKKPPDKKPLKKPVKKTVKTDKPKSIYVPNKDLKISKWIPTPKKEFTEIETNSWYEHRKFENPNKSPVQTYNKIVPVVPPESIKQQNLANKRKKTNRPIVFISSEKIRIYPTKDQQKILQTWFRLFAYMYNCTIDYINSKKVVLESGRINVAATRKVCNKISVRKAQKTIRDNLIQSTNPSIMTHIIDEAIGLACSNYKTCLTNYIERHIKKFDIKPWNMSKRKKIIIIEANFFKKGTFCPTVFPKMESSKPLTMIDKTVTLQYDSDTRKYILFVPRVTPKYSVNKEKNSCGIDPGLRDFLTVYSENETQSICPIEIVVNTTKNEYKKIDKINEIIKTKPNLNSKRKKKLNRGLRKYHRRVTNKMKDMHYKVSHELVNTFDKICIGKLNVKSILSKANTVLKSALKRKLATLSFYRFTQRLTHMGYKYGTEVVNVNEYLTTKTCSNCGKIKDLGASKIYECESCGMYADRDENAAKNILKVGLKPWYKQK",
+                    "count": 1,
+                    "msa": {
+                        "precomputed_msa_dir": "examples/msa/prot/42e5ee12c1203232498a149fbfad89a89bd56539cfd24c9f2490d1256175cefd",
+                        "pairing_db": "uniref100"
+                    }
+                }
+            },
+            {
+                "dnaSequence": {
+                    "sequence": "CCCA",
+                    "count": 1
+                }
+            },
+            {
+                "dnaSequence": {
+                    "sequence": "AGGAGGTGGCTGCCCCGACCGTC",
+                    "count": 1
+                }
+            },
+            {
+                "rnaSequence": {
+                    "sequence": "AAAAAUAGUCUAAUAAAAUCAGGGGUACAUUCCGCUAGUACUCCACCCUACGGGUUAAGCAAAUGAGAAUAUCGAAACGGUAUGCACAGGAUUCUUCGAGUGAUAAUCUUAGGAUGACUCACUAAGGAGAUGACUAAAGUGUAUCAUUCAAUAUUGUAUUGAACGGUAUUCUUCCAUAGAGAGUUGAUUUUUGGAGUAUCCAAAAAUAUCAACUUUUUAUGAGCGGGCAGCCACCUCCUUGUUAUUG",
+                    "count": 1,
+                    "msa": {
+                        "precomputed_msa_dir": "examples/msa/rna/615ee634ed5bcba2af15514c9b0a45ebc04a5d44511f1b5e55249670d7b48f58",
+                        "pairing_db": "uniref100"
+                    }
+                }
+            }
+        ]
+    }
+]

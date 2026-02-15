@@ -1,0 +1,63 @@
+default_language_version:
+  python: python3.12
+
+repos:
+  # 1. Basic checks: whitespace, end-of-file, docs, large files, private keys
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace # Remove trailing whitespace from lines
+      - id: end-of-file-fixer # Ensure files end with a newline
+      - id: check-docstring-first # Ensure modules start with a docstring
+      - id: check-yaml # Validate YAML syntax
+      - id: check-json # Validate JSON syntax
+      - id: detect-private-key # Prevent committing private keys
+      - id: check-toml # Validate TOML syntax
+      - id: check-case-conflict # Detect case-sensitive filename conflicts
+      - id: check-added-large-files # Prevent large files in commits
+      - id: mixed-line-ending # Normalize line endings to LF
+
+  # 2. Markdown formatting
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        args: ["--number"]
+        types: ["markdown"] # Only run on .md files
+
+  # 3. Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        files: "\\.sh$" # Only run on .sh files
+        exclude: "(initialize_script\\.sh|inference_demo\\.sh)" # Exclude setup scripts
+
+  # 5. Ruff: linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.1
+    hooks:
+      # Step 1: Sort imports via Ruff
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix, --select=I, --select=E303]  # Targets import sorting and blank line enforcement
+      # Step 2: Format code via Ruff
+      - id: ruff-format
+        name: Ruff format
+        language_version: python3.12
+        files: "\\.py$" # Only format Python files
+        exclude: "(.*/notebooks/.*)" # Exclude notebooks
+      # Step 3: Lint and auto-fix via Ruff
+      - id: ruff-check
+        name: Ruff check (fix)
+        args: ["--fix"] # Enable auto-fix for fixable lint rules
+        language_version: python3.12
+        files: "\\.py$" # Only check Python files
+        exclude: "(.*/notebooks/.*)" # Exclude notebooks
+
+  # 6. PyUpgrade: upgrade Python syntax
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.21.2
+    hooks:
+      - id: pyupgrade
+        language_version: python3.12
+        files: "\\.py$" # Only run on Python files
