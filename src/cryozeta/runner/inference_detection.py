@@ -384,6 +384,11 @@ class CryoEMInference:
             config.device if torch.cuda.is_available() else "cpu"
         )
         logger.info(f"Using device: {self.device}")
+        logger.info(
+            f"PyTorch version: {torch.__version__}, "
+            f"CUDA compiled version: {torch.version.cuda}, "
+            f"cuDNN version: {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else 'N/A'}"
+        )
 
         # Load models
         logger.info("Loading models...")

@@ -43,7 +43,7 @@ linux = "4.18"
 libc = { family = "glibc", version = "2.31" }
 
 [tool.pixi.dependencies]
-pytorch-gpu = ">=2.7.0"
+pytorch-gpu = "*"
 torchvision = "*"
 numpy = "<2.0.0"
 boost = ">=1.82"
@@ -51,9 +51,18 @@ libboost-devel = ">=1.82"
 eigen = "3.4.*"
 cutlass = "*"
 
+[tool.pixi.feature.cu11.dependencies]
+cuda-version = "11.8.*"
+cudatoolkit = "11.8.*"
+pytorch-gpu = ">=2.0.0,<2.5.0"
+
+[tool.pixi.feature.cu11.system-requirements]
+cuda = "11.0"
+
 [tool.pixi.feature.cu12.dependencies]
 cuda-version = { version = "12.8.*", channel = "nvidia" }
 cuda = { version = "12.8.*", channel = "nvidia" }
+pytorch-gpu = ">=2.7.0"
 
 [tool.pixi.feature.cu12.system-requirements]
 cuda = "12.0"
@@ -61,6 +70,7 @@ cuda = "12.0"
 [tool.pixi.feature.cu13.dependencies]
 cuda-version = { version = "13.*", channel = "nvidia" }
 cuda = { version = "13.*", channel = "nvidia" }
+pytorch-gpu = ">=2.7.0"
 
 [tool.pixi.feature.cu13.system-requirements]
 cuda = "13.0"
@@ -109,6 +119,8 @@ ruff = ">=0.12.0"
 
 [tool.pixi.environments]
 default = { features = ["cu12"], solve-group = "default" }
+cu11 = { features = ["cu11"], solve-group = "cu11" }
 cu13 = { features = ["cu13"], solve-group = "cu13" }
 dev = { features = ["dev", "cu12"], solve-group = "default" }
+dev-cu11 = { features = ["dev", "cu11"], solve-group = "cu11" }
 dev-cu13 = { features = ["dev", "cu13"], solve-group = "cu13" }

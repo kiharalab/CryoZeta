@@ -46,6 +46,11 @@ class InferenceRunner:
         self.init_dumper(need_atom_confidence=configs.need_atom_confidence)
 
     def init_env(self) -> None:
+        logger.info(
+            f"PyTorch version: {torch.__version__}, "
+            f"CUDA compiled version: {torch.version.cuda}, "
+            f"cuDNN version: {torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else 'N/A'}"
+        )
         self.print(
             f"Distributed environment: world size: {DIST_WRAPPER.world_size}, "
             + f"global rank: {DIST_WRAPPER.rank}, local rank: {DIST_WRAPPER.local_rank}"
@@ -96,11 +101,11 @@ class InferenceRunner:
         checkpoint_path = self.configs.load_checkpoint_path
         if not os.path.exists(checkpoint_path):
             raise Exception(f"Given checkpoint path not exist [{checkpoint_path}]")
-        self.print(
-            f"Loading from {checkpoint_path}"
-        )
+        self.print(f"Loading from {checkpoint_path}")
 
-        assert checkpoint_path.endswith(".safetensors"), "Checkpoint must be a safetensors file"
+        assert checkpoint_path.endswith(".safetensors"), (
+            "Checkpoint must be a safetensors file"
+        )
         state_dict = load_file(checkpoint_path, device=str(self.device))
 
         self.model.load_state_dict(
