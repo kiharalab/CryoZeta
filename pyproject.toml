@@ -19,14 +19,24 @@ cryozeta-detection = "cryozeta.runner.inference_detection:app"
 cryozeta-inference = "cryozeta.runner.inference:cli"
 cryozeta-combine = "cryozeta.runner.combine:app"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [tool.pixi.workspace]
 channels = ["nvidia", "pytorch", "conda-forge"]
 platforms = ["linux-64"]
 channel-priority = "disabled"
+license-file = "LICENSE"
+readme = "README.md"
+homepage = "https://em.kiharalab.org/algorithm/CryoZeta"
+repository = "https://github.com/kiharalab/CryoZeta"
+
+[tool.pixi.activation]
+scripts = ["env_setup.sh"]
+
+[tool.pixi.tasks]
+download-weights = "python -c \"from huggingface_hub import snapshot_download; snapshot_download('KiharaLab/CryoZeta', repo_type='model', local_dir='assets')\""
+clone-teaser = "test -d externals/TEASER-plusplus || (mkdir -p externals && git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git externals/TEASER-plusplus)"
+build-teaser = { cmd = "test -f externals/TEASER-plusplus/build/libteaser.so || (cmake -S externals/TEASER-plusplus -B externals/TEASER-plusplus/build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON && cmake --build externals/TEASER-plusplus/build -j$(nproc))", depends-on = ["clone-teaser"] }
+setup = { cmd = "sh -c 'echo \"==> Detected PIXI_ENV: $PIXI_ENV\" && if [ \"$PIXI_ENV\" != \"default\" ]; then echo \"==> Installing environment: $PIXI_ENV\" && pixi install -e \"$PIXI_ENV\"; fi && echo \"==> Setup complete!\"'", depends-on = ["download-weights", "build-teaser"] }
+
 
 [tool.pixi.system-requirements]
 linux = "4.18"

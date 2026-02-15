@@ -14,16 +14,14 @@
 # under GPLv3.
 set -e
 
-export LAYERNORM_TYPE=fast_layernorm
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
-
-# ── Auto-detect pixi environment based on GPU ─────────────────────────────────
+# ── Auto-detect pixi environment based on GPU ────────────────────────────────
 detect_pixi_env() {
-    local compute_cap
     if ! command -v nvidia-smi >/dev/null 2>&1; then
         echo "default"; return
     fi
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
+    local compute_cap
+    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
+        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
     if [ -z "$compute_cap" ]; then
         echo "default"; return
     fi
@@ -35,37 +33,40 @@ detect_pixi_env() {
     fi
 }
 
-PIXI_ENV=$(detect_pixi_env)
-echo "==> Using pixi environment: ${PIXI_ENV}"
-export CUTLASS_PATH="$(pwd)/.pixi/envs/${PIXI_ENV}"
+# Use PIXI_ENV from activation script if available, otherwise auto-detect.
+PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env)}"
 
+export LAYERNORM_TYPE=fast_layernorm
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# ── Inference parameters ──────────────────────────────────────────────────────
 N_sample=5
 N_step=20
 N_cycle=10
 seed=101
 use_deepspeed_evo_attention=true
-mode="combined" # cryozeta, cryozeta-interpolate, or combined
-overwrite=false # set to true to re-run even if output already exists
+mode="combined"  # cryozeta, cryozeta-interpolate, or combined
+overwrite=false   # set to true to re-run even if output already exists
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
 input_json_path="examples/example.json"
 dump_dir="output/example"
 
-# ── GPU configuration ──────────────────────────────────────────────────────────
+# ── GPU configuration ────────────────────────────────────────────────────────
 # Specify which single GPU to use (e.g. "0", "1", "2").
 gpu_ids="0"
-# ───────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 
-echo "==> GPU configuration: gpu_ids=${gpu_ids}"
+echo "==> Using pixi environment: ${PIXI_ENV}"
 gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "unknown")
 gpu_cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-echo "    GPU ${gpu_ids}: ${gpu_name} (compute capability ${gpu_cc})"
+echo "==> GPU ${gpu_ids}: ${gpu_name} (compute capability ${gpu_cc})"
 
 # Build --overwrite flag for typer-based CLIs (cryozeta-detection)
 em_overwrite_flag=""
 [ "$overwrite" = "true" ] && em_overwrite_flag="--overwrite"
 
-# ── Step 1: Atom detection (single GPU) ───────────────────────────────────────
+# ── Step 1: Atom detection (single GPU) ──────────────────────────────────────
 # Outputs to: ${dump_dir}/<name>/CryoZeta-Detection/
 CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-detection json-run \
     ${input_json_path} ${dump_dir} --device cuda ${em_overwrite_flag}
@@ -105,7 +106,7 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --overwrite ${overwrite}
 fi
 
-# ── Step 3: Combine best results (CPU only) ───────────────────────────────────
+# ── Step 3: Combine best results (CPU only) ──────────────────────────────────
 # Outputs to: ${dump_dir}/<name>/CryoZeta-Final/
 if [ "$mode" = "combined" ]; then
     pixi run --frozen -e "${PIXI_ENV}" cryozeta-combine \

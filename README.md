@@ -1,8 +1,7 @@
 # CryoZeta Inference
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
-[![CUDA](https://img.shields.io/badge/CUDA-12.6-blue?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
-[![CUDA 13](https://img.shields.io/badge/CUDA-13-blue?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
+[![CUDA](https://img.shields.io/badge/CUDA-12%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
 [![pixi](https://img.shields.io/badge/pixi-0.41.1-blue?logo=pixi)](https://pixi.sh)
 [![Ruff](https://img.shields.io/badge/Ruff-0.15.1-yellow?logo=ruff)](https://github.com/astral-sh/ruff)
 [![prek](https://img.shields.io/badge/prek-0.3.2-green?logo=git)](https://github.com/kawarabiyu/prek)
@@ -24,7 +23,7 @@ Estimated time: < 15 minutes
 
 - CUDA-capable GPU with 32 GB memory or more (CUDA 12.0 or higher)
 
-### 1. Install pixi (modern package manager)
+### 1. Install pixi
 
 ```bash
 curl -fsSL https://pixi.sh/install.sh | bash
@@ -37,26 +36,25 @@ Or visit https://pixi.sh/latest/#installation for other installation methods.
 ```bash
 git clone https://github.com/kiharalab/CryoZeta.git
 cd CryoZeta
+pixi run setup
 ```
 
-### 3. Install dependencies and the package
+The setup command automatically:
 
-```bash
-# Make the script executable
-chmod +x initialize_script.sh
-
-# Install all dependencies
-sh initialize_script.sh
-```
+1. Installs all dependencies (Python, CUDA, C++ libraries, etc.).
+2. Detects your GPU and selects the matching CUDA version (12 or 13).
+3. Downloads CryoZeta model weights from Hugging Face.
+4. Clones and builds [TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus).
 
 ## Usage
 
-### Quick Example
+### Quick Start
 
 ```bash
-# Run CryoZeta inference
 sh inference_demo.sh
 ```
+
+This runs the full CryoZeta pipeline on the bundled example (`examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU.
 
 ### Prepare Input JSON
 
@@ -110,11 +108,12 @@ The optional `msa` object has the following fields:
 
 > **Note:** DNA sequences do not require MSA information.
 
-### CryoZeta Inference
+### Running Inference
 
 Estimated time: ~ 30 minutes
 
-Specify the input JSON path, then run:
+Edit the parameters at the top of `inference_demo.sh` (input path, GPU id, etc.),
+then run:
 
 ```bash
 sh inference_demo.sh
