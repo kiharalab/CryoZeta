@@ -60,6 +60,7 @@ class TriangleAttention(nn.Module):
         chunk_size: int,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -75,6 +76,7 @@ class TriangleAttention(nn.Module):
                 self.mha,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
             ),
             mha_inputs,
@@ -90,6 +92,7 @@ class TriangleAttention(nn.Module):
         chunk_size: int | None = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -113,8 +116,12 @@ class TriangleAttention(nn.Module):
         # [*, I, J, C_in]
         x = self.layer_norm(x)
 
-        # [*, I, 1, 1, J]
-        mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
+        # cuEquivariance gets raw mask; other paths get inf-scaled mask
+        if use_cuequivariance_attention:
+            mask_bias = mask[..., :, None, None, :]
+        else:
+            # [*, I, 1, 1, J]
+            mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
 
         # [*, H, I, J]
         triangle_bias = permute_final_dims(self.linear(x), (2, 0, 1))
@@ -131,6 +138,7 @@ class TriangleAttention(nn.Module):
                 chunk_size,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
             )
@@ -141,6 +149,7 @@ class TriangleAttention(nn.Module):
                 biases=biases,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
             )
 

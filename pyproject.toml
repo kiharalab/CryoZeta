@@ -13,6 +13,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux"
 ]
 requires-python = ">=3.12,<3.13"
+dependencies = ["pytest>=9.0.2,<10"]
 
 [project.scripts]
 cryozeta-detection = "cryozeta.runner.inference_detection:app"
@@ -43,7 +44,7 @@ linux = "4.18"
 libc = { family = "glibc", version = "2.31" }
 
 [tool.pixi.dependencies]
-pytorch-gpu = ">=2.7.0"
+pytorch-gpu = "*"
 torchvision = "*"
 numpy = "<2.0.0"
 boost = ">=1.82"
@@ -51,9 +52,22 @@ libboost-devel = ">=1.82"
 eigen = "3.4.*"
 cutlass = "*"
 
+[tool.pixi.feature.cu11.dependencies]
+cuda-version = "11.8.*"
+cudatoolkit = "11.8.*"
+pytorch-gpu = ">=2.0.0,<2.5.0"
+
+[tool.pixi.feature.cu11.system-requirements]
+cuda = "11.0"
+
 [tool.pixi.feature.cu12.dependencies]
 cuda-version = { version = "12.8.*", channel = "nvidia" }
 cuda = { version = "12.8.*", channel = "nvidia" }
+pytorch-gpu = ">=2.7.0"
+cuda-nvrtc = ">=12.8.93,<13"
+
+[tool.pixi.feature.cu12.pypi-dependencies]
+cuequivariance-ops-torch-cu12 = ">=0.8.0"
 
 [tool.pixi.feature.cu12.system-requirements]
 cuda = "12.0"
@@ -61,6 +75,12 @@ cuda = "12.0"
 [tool.pixi.feature.cu13.dependencies]
 cuda-version = { version = "13.*", channel = "nvidia" }
 cuda = { version = "13.*", channel = "nvidia" }
+pytorch-gpu = ">=2.7.0"
+cuda-nvrtc = ">=13.0,<14"
+cuda-nvcc = { version = ">=13.0", channel = "nvidia" }
+
+[tool.pixi.feature.cu13.pypi-dependencies]
+cuequivariance-ops-torch-cu13 = ">=0.8.0"
 
 [tool.pixi.feature.cu13.system-requirements]
 cuda = "13.0"
@@ -102,6 +122,8 @@ shot-fpfh = { git = "https://github.com/aubin-tchoi/shot-fpfh" }
 open3d = ">=0.19.0"
 small-gicp = "<2.0"
 vesper = { git = "https://github.com/kiharalab/VESPER_CUDA.git", branch = "main" }
+tilelang = ">=0.0.1"
+cuequivariance-torch = ">=0.8.0"
 
 [tool.pixi.feature.dev.pypi-dependencies]
 prek = ">=0.3.2"
@@ -109,6 +131,8 @@ ruff = ">=0.12.0"
 
 [tool.pixi.environments]
 default = { features = ["cu12"], solve-group = "default" }
+cu11 = { features = ["cu11"], solve-group = "cu11" }
 cu13 = { features = ["cu13"], solve-group = "cu13" }
 dev = { features = ["dev", "cu12"], solve-group = "default" }
+dev-cu11 = { features = ["dev", "cu11"], solve-group = "cu11" }
 dev-cu13 = { features = ["dev", "cu13"], solve-group = "cu13" }

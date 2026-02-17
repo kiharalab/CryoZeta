@@ -30,6 +30,16 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+if cueq_is_installed:
+    try:
+        from cuequivariance_ops_torch.triangle_attention import (
+            CUEQ_TRIATTN_FALLBACK_THRESHOLD,
+        )
+        from cuequivariance_torch import triangle_attention as _cueq_triangle_attention
+    except (ImportError, OSError, RuntimeError):
+        cueq_is_installed = False
+
 fa_is_installed = importlib.util.find_spec("flash_attn") is not None
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
@@ -284,6 +294,58 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     return s
 
 
+def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> bool:
+    """Check if cuEquivariance triangle_attention would fall back for given params."""
+    if not cueq_is_installed:
+        return True
+    if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+        return True
+    if dtype == torch.float32:
+        if hidden_dim > 32 or hidden_dim % 4 != 0:
+            return True
+    else:
+        if hidden_dim > 128 or hidden_dim % 8 != 0:
+            return True
+    return False
+
+
+@torch.jit.ignore
+def _cuequivariance_attn(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    bias: torch.Tensor,
+    mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Wrapper for cuEquivariance triangle_attention with shape handling."""
+    qdim = len(q.shape)
+    if qdim == 4:
+        q = q.unsqueeze(0)
+        k = k.unsqueeze(0)
+        v = v.unsqueeze(0)
+        bias = bias.unsqueeze(0)
+        if mask is not None:
+            mask = mask.unsqueeze(0)
+    elif len(q.shape[:-3]) > 2:
+        batch_shape = q.shape[:-3]
+        flat_batch_size = 1
+        for dim in batch_shape:
+            flat_batch_size *= dim
+        q = q.reshape(flat_batch_size, *q.shape[-3:])
+        k = k.reshape(flat_batch_size, *k.shape[-3:])
+        v = v.reshape(flat_batch_size, *v.shape[-3:])
+        bias = bias.reshape(flat_batch_size, *bias.shape[-3:])
+        if mask is not None:
+            mask = mask.reshape(flat_batch_size, *mask.shape[-2:])
+
+    o = _cueq_triangle_attention(q=q, k=k, v=v, bias=bias.float(), mask=mask)
+
+    if qdim == 4:
+        o = o.squeeze(0)
+    o = o.transpose(-2, -3)
+    return o
+
+
 # @torch.jit.script
 def _attention(
     query: torch.Tensor,
@@ -477,6 +539,7 @@ class Attention(nn.Module):
         biases: list[torch.Tensor] | None = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -500,6 +563,9 @@ class Attention(nn.Module):
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
                 implementation is used instead
+            use_cuequivariance_attention:
+                Whether to use cuEquivariance triangle attention kernel.
+                Falls back to DeepSpeed or naive if unsupported shapes.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -525,20 +591,55 @@ class Attention(nn.Module):
 
         attn_options = [
             use_memory_efficient_kernel,
-            use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention or use_cuequivariance_attention,
             use_lma,
             use_flash,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
+        if use_cuequivariance_attention:
+            if biases is None or len(biases) != 2:
+                raise ValueError(
+                    "cuEquivariance attention requires exactly two bias terms"
+                )
+
         if biases is None:
             biases = []
 
-        # DeepSpeed attention kernel applies scaling internally
-        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not use_deepspeed_evo_attention)
+        # cuEquivariance fallback: if shape is unsupported, fall back to DeepSpeed
+        if use_cuequivariance_attention:
+            if cueq_would_fall_back(
+                q_x.shape[-2], self.c_hidden, q_x.dtype
+            ):
+                # Convert raw mask back to inf-scaled for non-cueq paths
+                _inf = getattr(self, "inf", 1e9)
+                biases[0] = _inf * (biases[0] - 1)
+                use_cuequivariance_attention = False
+                use_deepspeed_evo_attention = True
 
-        if use_deepspeed_evo_attention:
+        # cuEquivariance and DeepSpeed apply scaling internally
+        q, k, v = self._prep_qkv(
+            q_x, kv_x,
+            apply_scale=not (use_deepspeed_evo_attention or use_cuequivariance_attention),
+        )
+
+        if use_cuequivariance_attention:
+            if not cueq_is_installed:
+                raise ValueError(
+                    "use_cuequivariance_attention is True but cuequivariance_torch is not installed"
+                )
+            try:
+                # biases[0] = mask, biases[1] = triangle_bias
+                o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
+            except (RuntimeError, TypeError, OSError):
+                # Triton compilation failure (e.g. missing ptxas); fall back
+                _inf = getattr(self, "inf", 1e9)
+                biases[0] = _inf * (biases[0] - 1)
+                q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
+                o = _deepspeed_evo_attn(q, k, v, biases)
+                use_cuequivariance_attention = False
+        elif use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
                     "If use_deepspeed_evo_attention is True, you may only "

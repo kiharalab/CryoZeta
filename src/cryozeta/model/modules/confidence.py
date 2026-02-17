@@ -138,6 +138,9 @@ class ConfidenceHead(nn.Module):
         x_pred_coords: torch.Tensor,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
+        use_cuequivariance_multiplicative_update: bool = False,
+        use_cuequivariance_attention_pair_bias: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
@@ -157,6 +160,8 @@ class ConfidenceHead(nn.Module):
                 [..., N_sample, N_atoms, 3]
             use_memory_efficient_kernel (bool, optional): Whether to use memory-efficient kernel. Defaults to False.
             use_deepspeed_evo_attention (bool, optional): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_cuequivariance_attention (bool, optional): Whether to use cuEquivariance attention. Defaults to False.
+            use_cuequivariance_multiplicative_update (bool, optional): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool, optional): Whether to use low-memory attention. Defaults to False.
             inplace_safe (bool, optional): Whether to use inplace operations. Defaults to False.
             chunk_size (Optional[int], optional): Chunk size for memory-efficient operations. Defaults to None.
@@ -202,6 +207,9 @@ class ConfidenceHead(nn.Module):
                     x_pred_rep_coords=x_pred_rep_coords[..., i, :, :],
                     use_memory_efficient_kernel=use_memory_efficient_kernel,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cuequivariance_attention=use_cuequivariance_attention,
+                    use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
+                    use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                     chunk_size=chunk_size,
@@ -240,6 +248,9 @@ class ConfidenceHead(nn.Module):
         x_pred_rep_coords: torch.Tensor,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
+        use_cuequivariance_multiplicative_update: bool = False,
+        use_cuequivariance_attention_pair_bias: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
@@ -264,6 +275,9 @@ class ConfidenceHead(nn.Module):
             pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cuequivariance_attention=use_cuequivariance_attention,
+            use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
+            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,

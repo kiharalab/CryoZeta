@@ -12,11 +12,23 @@
 # code remains under Apache-2.0; the combined work is distributed
 # under GPLv3.
 
+import importlib.util
 from functools import partial
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+_cueq_attn_pair_bias_available = (
+    importlib.util.find_spec("cuequivariance_torch") is not None
+)
+if _cueq_attn_pair_bias_available:
+    try:
+        from cuequivariance_torch import (
+            attention_pair_bias as _cueq_attention_pair_bias,
+        )
+    except (ImportError, OSError, RuntimeError):
+        _cueq_attn_pair_bias_available = False
 
 from cryozeta.model.modules.primitives import (
     AdaptiveLayerNorm,
@@ -146,12 +158,71 @@ class AttentionPairBias(nn.Module):
         )
         return a
 
+    def _cuequivariance_standard_attention(
+        self,
+        a: torch.Tensor,
+        z: torch.Tensor,
+    ) -> torch.Tensor:
+        """Standard attention with pair bias using cuEquivariance fused kernel.
+
+        Args:
+            a: [..., N, c_a] - already after LayerNorm/AdaLayerNorm
+            z: [..., N, N, c_z] - raw pair tensor
+        """
+        q = self.attention.linear_q(a)
+        k = self.attention.linear_k(a)
+        v = self.attention.linear_v(a)
+
+        *batch_shape, N, D = q.shape
+        H = self.n_heads
+        DH = D // H
+
+        q = q.view(*batch_shape, N, H, DH).transpose(-2, -3)
+        k = k.view(*batch_shape, N, H, DH).transpose(-2, -3)
+        v = v.view(*batch_shape, N, H, DH).transpose(-2, -3)
+
+        B = 1
+        for d in batch_shape:
+            B *= d
+        B = max(B, 1)
+
+        q_flat = q.reshape(B, H, N, DH)
+        k_flat = k.reshape(B, H, N, DH)
+        v_flat = v.reshape(B, H, N, DH)
+        a_flat = a.reshape(B, N, a.shape[-1])
+        z_flat = z.reshape(B, N, N, z.shape[-1])
+
+        mask = a.new_ones(B, N)
+
+        result = _cueq_attention_pair_bias(
+            s=a_flat,
+            q=q_flat,
+            k=k_flat,
+            v=v_flat,
+            z=z_flat,
+            mask=mask,
+            num_heads=H,
+            w_proj_z=self.linear_nobias_z.weight,
+            w_proj_g=self.attention.linear_g.weight,
+            w_proj_o=self.attention.linear_o.weight,
+            w_ln_z=self.layernorm_z.weight,
+            b_ln_z=self.layernorm_z.bias,
+            b_proj_z=None,
+            b_proj_g=self.attention.linear_g.bias,
+            b_proj_o=self.attention.linear_o.bias,
+            return_z_proj=False,
+        )
+
+        output = result[0] if isinstance(result, tuple) else result
+        return output.reshape(*batch_shape, N, a.shape[-1])
+
     def standard_multihead_attention(
         self,
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
         inplace_safe: bool = False,
+        use_cuequivariance_attention_pair_bias: bool = False,
     ) -> torch.Tensor:
         """Used by Algorithm 7/20
 
@@ -163,11 +234,18 @@ class AttentionPairBias(nn.Module):
             z (torch.Tensor): pair embedding, used for computing pair bias.
                 [..., N_token, N_token, c_z]
             inplace_safe (bool): Whether it is safe to use inplace operations. Defaults to False.
+            use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance fused kernel. Defaults to False.
 
         Returns:
             torch.Tensor: the updated a from AttentionPairBias
                 [..., N_token, c_a]
         """
+        if (
+            use_cuequivariance_attention_pair_bias
+            and _cueq_attn_pair_bias_available
+            and (self.attention.c_hidden % 32 == 0)
+        ):
+            return self._cuequivariance_standard_attention(a, z)
 
         # Multi-head attention bias
         bias = self.linear_nobias_z(self.layernorm_z(z))
@@ -187,6 +265,7 @@ class AttentionPairBias(nn.Module):
         n_keys: int | None = None,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
     ) -> torch.Tensor:
         """Details are given in local_forward and standard_forward"""
         # Input projections
@@ -207,7 +286,10 @@ class AttentionPairBias(nn.Module):
                 chunk_size=chunk_size,
             )
         else:
-            a = self.standard_multihead_attention(a, s, z, inplace_safe=inplace_safe)
+            a = self.standard_multihead_attention(
+                a, s, z, inplace_safe=inplace_safe,
+                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
+            )
 
         # Output projection (from adaLN-Zero [27])
         if self.has_s:
@@ -260,6 +342,7 @@ class DiffusionTransformerBlock(nn.Module):
         n_keys: int | None = None,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -273,6 +356,7 @@ class DiffusionTransformerBlock(nn.Module):
             n_keys (int, optional): local window size of key tensor. Defaults to None.
             inplace_safe (bool): Whether it is safe to use inplace operations. Defaults to False.
             chunk_size (Optional[int]): Chunk size for memory-efficient operations. Defaults to None.
+            use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance fused kernel. Defaults to False.
 
         Returns:
             torch.Tensor: the output of DiffusionTransformerBlock
@@ -286,6 +370,7 @@ class DiffusionTransformerBlock(nn.Module):
             n_keys=n_keys,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
+            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
         )
         if inplace_safe:
             attn_out += a
@@ -342,6 +427,7 @@ class DiffusionTransformer(nn.Module):
         inplace_safe: bool = False,
         chunk_size: int | None = None,
         clear_cache_between_blocks: bool = False,
+        use_cuequivariance_attention_pair_bias: bool = False,
     ):
         blocks = [
             partial(
@@ -350,6 +436,7 @@ class DiffusionTransformer(nn.Module):
                 n_keys=n_keys,
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
+                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
             )
             for b in self.blocks
         ]
@@ -371,6 +458,7 @@ class DiffusionTransformer(nn.Module):
         n_keys: int | None = None,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -382,6 +470,7 @@ class DiffusionTransformer(nn.Module):
                 [..., N, N, c_z]
             n_queries (int, optional): local window size of query tensor. If not None, will perform local attention. Defaults to None.
             n_keys (int, optional): local window size of key tensor. Defaults to None.
+            use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance fused kernel. Defaults to False.
 
         Returns:
             torch.Tensor: the output of DiffusionTransformer
@@ -397,6 +486,7 @@ class DiffusionTransformer(nn.Module):
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
             clear_cache_between_blocks=clear_cache_between_blocks,
+            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
         )
         blocks_per_ckpt = self.blocks_per_ckpt
         if not torch.is_grad_enabled():
