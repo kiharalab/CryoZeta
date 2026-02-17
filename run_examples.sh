@@ -56,6 +56,7 @@ use_deepspeed_evo_attention=true
 use_cuequivariance_attention=false
 use_cuequivariance_multiplicative_update=false
 use_cuequivariance_attention_pair_bias=false
+use_opm_tilelang=false
 overwrite=false
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
@@ -91,6 +92,7 @@ run_example() {
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \
@@ -110,6 +112,7 @@ run_example() {
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \
