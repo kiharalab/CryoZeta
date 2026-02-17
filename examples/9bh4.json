@@ -1,0 +1,21 @@
+[
+    {
+        "name": "9bh4",
+        "modelSeeds": [101],
+        "resolution": 2.55,
+        "contour_level": 0.2,
+        "map_path": "//net/kihara/home/li3916/scratch/databases/emdb/44532.map.gz",
+        "sequences": [
+            {
+                "proteinChain": {
+                    "sequence": "PNAEDMTSKDYYFDSYAHFGIHEEMLKDEVRTLTYRNSMFHNRHLFKDKVVLDVGSGTGILCMFAAKAGARKVIGIECSSISDYAVKIVKANKLDHVVTIIKGKVEEVELPVEKVDIIISEWMGYCLFYESMLNTVLYARDKWLAPDGLIFPDRATLYVTAIEDRQYKDYKIHWWENVYGFDMSCIKDVAIKEPLVDVVDPKQLVTNACLIKEVDIYTVKVEDLTFTSPFCLQVKRNDYVHALVAYFNIEFTRCHKRTGFSTSPESPYTHWKQTVFYMEDYLTVKTGEEIFGTIGMRPNAKNNRDLDFTIDLDFKGQLCELSCSTDYRMR",
+                    "count": 6,
+                    "msa": {
+                        "precomputed_msa_dir": "/net/kihara/shared-scratch/ykagaya/20250220-SmartFold-Dataset/project_assets/SmartFold/msa/prot/9ba8fd1c2990acbbe257a84beffce5ae47aae7bd650c465a5a5de84766dddc48",
+                        "pairing_db": "uniref100"
+                    }
+                }
+            }
+        ]
+    }
+]

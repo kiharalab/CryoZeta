@@ -80,33 +80,24 @@ class DiffusionConditioning(nn.Module):
         self.transition_s2 = Transition(c_in=self.c_s, n=2)
         print(f"Diffusion Module has {self.sigma_data}")
 
-    def forward(
+    def pair_conditioning(
         self,
-        t_hat_noise_level: torch.Tensor,
-        input_feature_dict: dict[str, torch.Tensor | int | float | dict],
-        s_inputs: torch.Tensor,
-        s_trunk: torch.Tensor,
         z_trunk: torch.Tensor,
+        input_feature_dict: dict[str, torch.Tensor | int | float | dict],
         inplace_safe: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
+    ) -> torch.Tensor:
+        """Compute pair conditioning (step-invariant, can be cached across diffusion steps).
+
         Args:
-            t_hat_noise_level (torch.Tensor): the noise level
-                [..., N_sample]
-            input_feature_dict (dict[str, Union[torch.Tensor, int, float, dict]]): input meta feature dict
-            s_inputs (torch.Tensor): single embedding from InputFeatureEmbedder
-                [..., N_tokens, c_s_inputs]
-            s_trunk (torch.Tensor): single feature embedding from PairFormer (Alg17)
-                [..., N_tokens, c_s]
             z_trunk (torch.Tensor): pair feature embedding from PairFormer (Alg17)
                 [..., N_tokens, N_tokens, c_z]
+            input_feature_dict (dict): input meta feature dict (for relative position encoding)
             inplace_safe (bool): Whether it is safe to use inplace operations.
+
         Returns:
-            tuple[torch.Tensor, torch.Tensor]: embeddings s and z
-                - s (torch.Tensor): [..., N_sample, N_tokens, c_s]
-                - z (torch.Tensor): [..., N_tokens, N_tokens, c_z]
+            torch.Tensor: pair conditioning embedding
+                [..., N_tokens, N_tokens, c_z]
         """
-        # Pair conditioning
         pair_z = torch.cat(
             tensors=[z_trunk, self.relpe(input_feature_dict)], dim=-1
         )  # [..., N_tokens, N_tokens, 2*c_z]
@@ -117,7 +108,30 @@ class DiffusionConditioning(nn.Module):
         else:
             pair_z = pair_z + self.transition_z1(pair_z)
             pair_z = pair_z + self.transition_z2(pair_z)
-        # Single conditioning
+        return pair_z
+
+    def single_conditioning(
+        self,
+        s_trunk: torch.Tensor,
+        s_inputs: torch.Tensor,
+        t_hat_noise_level: torch.Tensor,
+        inplace_safe: bool = False,
+    ) -> torch.Tensor:
+        """Compute single conditioning (step-dependent, must be called each step).
+
+        Args:
+            s_trunk (torch.Tensor): single feature embedding from PairFormer (Alg17)
+                [..., N_tokens, c_s]
+            s_inputs (torch.Tensor): single embedding from InputFeatureEmbedder
+                [..., N_tokens, c_s_inputs]
+            t_hat_noise_level (torch.Tensor): the noise level
+                [..., N_sample]
+            inplace_safe (bool): Whether it is safe to use inplace operations.
+
+        Returns:
+            torch.Tensor: single conditioning embedding
+                [..., N_sample, N_tokens, c_s]
+        """
         single_s = torch.cat(
             tensors=[s_trunk, s_inputs], dim=-1
         )  # [..., N_tokens, c_s + c_s_inputs]
@@ -134,6 +148,45 @@ class DiffusionConditioning(nn.Module):
         else:
             single_s = single_s + self.transition_s1(single_s)
             single_s = single_s + self.transition_s2(single_s)
+        return single_s
+
+    def forward(
+        self,
+        t_hat_noise_level: torch.Tensor,
+        input_feature_dict: dict[str, torch.Tensor | int | float | dict],
+        s_inputs: torch.Tensor,
+        s_trunk: torch.Tensor,
+        z_trunk: torch.Tensor,
+        inplace_safe: bool = False,
+        cached_pair_z: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            t_hat_noise_level (torch.Tensor): the noise level
+                [..., N_sample]
+            input_feature_dict (dict[str, Union[torch.Tensor, int, float, dict]]): input meta feature dict
+            s_inputs (torch.Tensor): single embedding from InputFeatureEmbedder
+                [..., N_tokens, c_s_inputs]
+            s_trunk (torch.Tensor): single feature embedding from PairFormer (Alg17)
+                [..., N_tokens, c_s]
+            z_trunk (torch.Tensor): pair feature embedding from PairFormer (Alg17)
+                [..., N_tokens, N_tokens, c_z]
+            inplace_safe (bool): Whether it is safe to use inplace operations.
+            cached_pair_z (torch.Tensor, optional): Pre-computed pair conditioning.
+                If provided, skips pair conditioning computation (saves ~2GB peak VRAM per step).
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: embeddings s and z
+                - s (torch.Tensor): [..., N_sample, N_tokens, c_s]
+                - z (torch.Tensor): [..., N_tokens, N_tokens, c_z]
+        """
+        if cached_pair_z is not None:
+            pair_z = cached_pair_z
+        else:
+            pair_z = self.pair_conditioning(z_trunk, input_feature_dict, inplace_safe)
+        single_s = self.single_conditioning(
+            s_trunk, s_inputs, t_hat_noise_level, inplace_safe
+        )
         if not self.training and pair_z.shape[-2] > 2000:
             torch.cuda.empty_cache()
         return single_s, pair_z
@@ -324,6 +377,32 @@ class DiffusionModule(nn.Module):
         if initialization.get("zero_init_dit_output", False):
             nn.init.zeros_(self.atom_attention_decoder.linear_no_bias_out.weight)
 
+    def compute_pair_conditioning(
+        self,
+        z_trunk: torch.Tensor,
+        input_feature_dict: dict[str, torch.Tensor | int | float | dict],
+        inplace_safe: bool = False,
+    ) -> torch.Tensor:
+        """Pre-compute pair conditioning (invariant across diffusion steps).
+
+        Call this once before the denoising loop and pass the result as
+        cached_pair_z to forward()/f_forward() to avoid redundant computation.
+
+        Args:
+            z_trunk (torch.Tensor): pair feature embedding from PairFormer
+                [..., N_tokens, N_tokens, c_z]
+            input_feature_dict (dict): input features (for relative position encoding)
+            inplace_safe (bool): Whether it is safe to use inplace operations.
+
+        Returns:
+            torch.Tensor: cached pair conditioning [..., N_tokens, N_tokens, c_z]
+        """
+        return self.diffusion_conditioning.pair_conditioning(
+            z_trunk=z_trunk,
+            input_feature_dict=input_feature_dict,
+            inplace_safe=inplace_safe,
+        )
+
     def f_forward(
         self,
         r_noisy: torch.Tensor,
@@ -334,6 +413,8 @@ class DiffusionModule(nn.Module):
         z_trunk: torch.Tensor,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
+        cached_pair_z: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """The raw network to be trained.
         As in EDM equation (7), this is F_theta(c_in * x, c_noise(sigma)).
@@ -353,6 +434,8 @@ class DiffusionModule(nn.Module):
                 [..., N_tokens, N_tokens, c_z]
             inplace_safe (bool): Whether it is safe to use inplace operations. Defaults to False.
             chunk_size (Optional[int]): Chunk size for memory-efficient operations. Defaults to None.
+            cached_pair_z (torch.Tensor, optional): Pre-computed pair conditioning from
+                compute_pair_conditioning(). Skips redundant pair conditioning computation.
 
         Returns:
             torch.Tensor: coordinates update
@@ -368,6 +451,7 @@ class DiffusionModule(nn.Module):
         # Diffusion_conditioning consumes 7-8G when token num is 768,
         # use checkpoint here if blocks_per_ckpt is not None.
         if blocks_per_ckpt:
+            # Training path — always recompute (checkpointing needs full recomputation)
             checkpoint_fn = get_checkpoint_fn()
             s_single, z_pair = checkpoint_fn(
                 self.diffusion_conditioning,
@@ -378,6 +462,15 @@ class DiffusionModule(nn.Module):
                 z_trunk,
                 inplace_safe,
             )
+        elif cached_pair_z is not None:
+            # Inference with cached pair conditioning — only compute single conditioning
+            s_single = self.diffusion_conditioning.single_conditioning(
+                s_trunk=s_trunk,
+                s_inputs=s_inputs,
+                t_hat_noise_level=t_hat_noise_level,
+                inplace_safe=inplace_safe,
+            )
+            z_pair = cached_pair_z
         else:
             s_single, z_pair = self.diffusion_conditioning(
                 t_hat_noise_level=t_hat_noise_level,
@@ -432,6 +525,7 @@ class DiffusionModule(nn.Module):
             z=z_pair,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
+            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
         )
 
         a_token = self.layernorm_a(a_token)
@@ -473,6 +567,8 @@ class DiffusionModule(nn.Module):
         z_trunk: torch.Tensor,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
+        cached_pair_z: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """One step denoise: x_noisy, noise_level -> x_denoised
 
@@ -490,6 +586,8 @@ class DiffusionModule(nn.Module):
                 [..., N_tokens, N_tokens, c_z]
             inplace_safe (bool): Whether it is safe to use inplace operations. Defaults to False.
             chunk_size (Optional[int]): Chunk size for memory-efficient operations. Defaults to None.
+            cached_pair_z (torch.Tensor, optional): Pre-computed pair conditioning from
+                compute_pair_conditioning(). Saves ~2GB peak VRAM per step at N=2000.
 
         Returns:
             torch.Tensor: the denoised coordinates of x
@@ -516,6 +614,8 @@ class DiffusionModule(nn.Module):
             z_trunk=z_trunk,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
+            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
+            cached_pair_z=cached_pair_z,
         )
 
         # Rescale updates to positions and combine with input positions

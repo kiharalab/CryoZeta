@@ -22,6 +22,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 from loguru import logger
+from torch.profiler import record_function
 from tqdm import tqdm
 
 from cryozeta.model import sample_confidence
@@ -36,6 +37,7 @@ from cryozeta.utils.torch_utils import autocasting_disable_decorator
 from .modules.confidence import ConfidenceHead
 from .modules.diffusion import DiffusionModule
 from .modules.embedders import InputFeatureEmbedder, RelativePositionEncoding
+from .modules.empairformer import EMPairformerStack, MSAModule, TemplateEmbedder
 from .modules.fitting import (
     FitModelPoints,
     FitModelPointsTeaser,
@@ -44,7 +46,6 @@ from .modules.fitting import (
     SetPntResAffinity,
 )
 from .modules.head import DistogramHead, PointNoiseHead, PointResidueClassHead
-from .modules.empairformer import EMPairformerStack, MSAModule, TemplateEmbedder
 from .modules.primitives import LinearNoBias
 
 
@@ -133,6 +134,40 @@ class CryoZeta(nn.Module):
         nn.init.zeros_(self.linear_no_bias_pz.weight)
         nn.init.zeros_(self.linear_no_bias_p.weight)
 
+    # Modules only used during trunk (empairformer) phase — safe to offload after.
+    _TRUNK_MODULE_NAMES = (
+        "input_embedder",
+        "relative_position_encoding",
+        "template_embedder",
+        "msa_module",
+        "empairformer_stack",
+        "linear_no_bias_sinit",
+        "linear_no_bias_zinit1",
+        "linear_no_bias_zinit2",
+        "linear_no_bias_pzinit",
+        "linear_no_bias_pinit",
+        "linear_no_bias_token_bond",
+        "linear_no_bias_z_cycle",
+        "linear_no_bias_s",
+        "linear_no_bias_pz",
+        "linear_no_bias_p",
+        "layernorm_z_cycle",
+        "layernorm_s",
+        "layernorm_pz",
+        "layernorm_p",
+    )
+
+    def _offload_trunk(self) -> None:
+        """Move trunk modules to CPU to free GPU VRAM after empairformer output."""
+        for name in self._TRUNK_MODULE_NAMES:
+            getattr(self, name).to("cpu")
+        torch.cuda.empty_cache()
+
+    def _reload_trunk(self, device: torch.device) -> None:
+        """Move trunk modules back to GPU."""
+        for name in self._TRUNK_MODULE_NAMES:
+            getattr(self, name).to(device)
+
     def get_empairformer_output(
         self,
         input_feature_dict: dict[str, Any],
@@ -160,27 +195,28 @@ class CryoZeta(nn.Module):
             deepspeed_evo_attention_condition_satisfy = True
 
         # Line 1-5
-        s_inputs, pz_inputs, p_inputs = self.input_embedder(
-            input_feature_dict, inplace_safe=False, chunk_size=chunk_size
-        )  # [..., N_token, 449]
-        s_init = self.linear_no_bias_sinit(s_inputs)  #  [..., N_token, c_s]
-        z_init = (
-            self.linear_no_bias_zinit1(s_init)[..., None, :]
-            + self.linear_no_bias_zinit2(s_init)[..., None, :, :]
-        )  #  [..., N_token, N_token, c_z]
-        pz_init = self.linear_no_bias_pzinit(pz_inputs)
-        p_init = self.linear_no_bias_pinit(p_inputs)
+        with record_function("input_embedding"):
+            s_inputs, pz_inputs, p_inputs = self.input_embedder(
+                input_feature_dict, inplace_safe=False, chunk_size=chunk_size
+            )  # [..., N_token, 449]
+            s_init = self.linear_no_bias_sinit(s_inputs)  #  [..., N_token, c_s]
+            z_init = (
+                self.linear_no_bias_zinit1(s_init)[..., None, :]
+                + self.linear_no_bias_zinit2(s_init)[..., None, :, :]
+            )  #  [..., N_token, N_token, c_z]
+            pz_init = self.linear_no_bias_pzinit(pz_inputs)
+            p_init = self.linear_no_bias_pinit(p_inputs)
 
-        if inplace_safe:
-            z_init += self.relative_position_encoding(input_feature_dict)
-            z_init += self.linear_no_bias_token_bond(
-                input_feature_dict["token_bonds"].unsqueeze(dim=-1)
-            )
-        else:
-            z_init = z_init + self.relative_position_encoding(input_feature_dict)
-            z_init = z_init + self.linear_no_bias_token_bond(
-                input_feature_dict["token_bonds"].unsqueeze(dim=-1)
-            )
+            if inplace_safe:
+                z_init += self.relative_position_encoding(input_feature_dict)
+                z_init += self.linear_no_bias_token_bond(
+                    input_feature_dict["token_bonds"].unsqueeze(dim=-1)
+                )
+            else:
+                z_init = z_init + self.relative_position_encoding(input_feature_dict)
+                z_init = z_init + self.linear_no_bias_token_bond(
+                    input_feature_dict["token_bonds"].unsqueeze(dim=-1)
+                )
         # Line 6
         z = torch.zeros_like(z_init)
         s = torch.zeros_like(s_init)
@@ -195,89 +231,104 @@ class CryoZeta(nn.Module):
             leave=False,
             dynamic_ncols=True,
         ):
-            with torch.no_grad():
+            with torch.no_grad(), record_function(f"recycling_cycle_{_cycle_no}"):
                 z = z_init + self.linear_no_bias_z_cycle(self.layernorm_z_cycle(z))
                 if inplace_safe:
-                    if self.template_embedder.n_blocks > 0:
-                        z += self.template_embedder(
+                    with record_function("template_embedding"):
+                        if self.template_embedder.n_blocks > 0:
+                            z += self.template_embedder(
+                                input_feature_dict,
+                                z,
+                                use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
+                                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
+                                and deepspeed_evo_attention_condition_satisfy,
+                                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                                use_lma=self.configs.use_lma,
+                                inplace_safe=inplace_safe,
+                                chunk_size=chunk_size,
+                            )
+                    with record_function("msa_module"):
+                        z = self.msa_module(
                             input_feature_dict,
                             z,
+                            s_inputs,
+                            pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
                             use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
                             and deepspeed_evo_attention_condition_satisfy,
+                            use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                            use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
                             inplace_safe=inplace_safe,
                             chunk_size=chunk_size,
                         )
-                    z = self.msa_module(
-                        input_feature_dict,
-                        z,
-                        s_inputs,
-                        pair_mask=None,
-                        use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                        use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                        and deepspeed_evo_attention_condition_satisfy,
-                        use_lma=self.configs.use_lma,
-                        inplace_safe=inplace_safe,
-                        chunk_size=chunk_size,
-                    )
                 else:
-                    if self.template_embedder.n_blocks > 0:
-                        z = z + self.template_embedder(
+                    with record_function("template_embedding"):
+                        if self.template_embedder.n_blocks > 0:
+                            z = z + self.template_embedder(
+                                input_feature_dict,
+                                z,
+                                use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
+                                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
+                                and deepspeed_evo_attention_condition_satisfy,
+                                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                                use_lma=self.configs.use_lma,
+                                inplace_safe=inplace_safe,
+                                chunk_size=chunk_size,
+                            )
+                    with record_function("msa_module"):
+                        z = self.msa_module(
                             input_feature_dict,
                             z,
+                            s_inputs,
+                            pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
                             use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
                             and deepspeed_evo_attention_condition_satisfy,
+                            use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                            use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
                             inplace_safe=inplace_safe,
                             chunk_size=chunk_size,
                         )
-                    z = self.msa_module(
-                        input_feature_dict,
-                        z,
-                        s_inputs,
-                        pair_mask=None,
-                        use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                        use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                        and deepspeed_evo_attention_condition_satisfy,
-                        use_lma=self.configs.use_lma,
-                        inplace_safe=inplace_safe,
-                        chunk_size=chunk_size,
-                    )
                 s = s_init + self.linear_no_bias_s(self.layernorm_s(s))
                 pz = pz_init + self.linear_no_bias_pz(self.layernorm_pz(pz))
                 p = p_init + self.linear_no_bias_p(self.layernorm_p(p))
 
-                s, z, pz, p = self.empairformer_stack(
-                    s,
-                    z,
-                    pz,
-                    p,
-                    pair_mask=input_feature_dict["pair_mask"],
-                    use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                    use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                    and deepspeed_evo_attention_condition_satisfy,
-                    use_lma=self.configs.use_lma,
-                    inplace_safe=inplace_safe,
-                    chunk_size=chunk_size,
-                )
+                with record_function("empairformer_stack"):
+                    s, z, pz, p = self.empairformer_stack(
+                        s,
+                        z,
+                        pz,
+                        p,
+                        pair_mask=input_feature_dict["pair_mask"],
+                        use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
+                        use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
+                        and deepspeed_evo_attention_condition_satisfy,
+                        use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                        use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
+                        use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
+                        use_lma=self.configs.use_lma,
+                        inplace_safe=inplace_safe,
+                        chunk_size=chunk_size,
+                    )
 
                 if self.configs.use_affinity:
-                    with torch.no_grad():
-                        distogram = self.point_residue_head(pz.unsqueeze(0))
-                    res2pnts, _ = PointResidueMatching(distogram.squeeze(0))
-                    if res2pnts:
-                        affinity = SetPntResAffinity(
-                            res2pnts,
-                            input_feature_dict["asym_id"],
-                            input_feature_dict["entity_id"],
-                            input_feature_dict["sym_id"],
-                            input_feature_dict["em_support_points"],
-                        )
+                    with record_function("affinity_update"):
+                        with torch.no_grad():
+                            distogram = self.point_residue_head(pz.unsqueeze(0))
+                        res2pnts, _ = PointResidueMatching(distogram.squeeze(0))
+                        if res2pnts:
+                            affinity = SetPntResAffinity(
+                                res2pnts,
+                                input_feature_dict["asym_id"],
+                                input_feature_dict["entity_id"],
+                                input_feature_dict["sym_id"],
+                                input_feature_dict["em_support_points"],
+                            )
 
-                        pz = pz.clone()
-                        pz[..., -1] = affinity
+                            pz = pz.clone()
+                            pz[..., -1] = affinity
 
         return s_inputs, s, z, pz, p
 
@@ -415,12 +466,13 @@ class CryoZeta(nn.Module):
         pred_dict = {}
         time_tracker = {}
 
-        s_inputs, s, z, pz, _p = self.get_empairformer_output(
-            input_feature_dict=input_feature_dict,
-            N_cycle=N_cycle,
-            inplace_safe=inplace_safe,
-            chunk_size=chunk_size,
-        )
+        with record_function("empairformer_output"):
+            s_inputs, s, z, pz, _p = self.get_empairformer_output(
+                input_feature_dict=input_feature_dict,
+                N_cycle=N_cycle,
+                inplace_safe=inplace_safe,
+                chunk_size=chunk_size,
+            )
         keys_to_delete = []
         for key in input_feature_dict.keys():
             if "template_" in key or key in [
@@ -437,9 +489,16 @@ class CryoZeta(nn.Module):
             del input_feature_dict[key]
         torch.cuda.empty_cache()
 
+        # Offload trunk modules to CPU — they are never used again in this loop.
+        # Frees ~800MB-1.5GB of VRAM for diffusion and confidence phases.
+        trunk_device = s_inputs.device
+        self._offload_trunk()
+
         step_trunk = time.time()
         time_tracker.update({"empairformer": step_trunk - step_st})
-        logger.info(f"EMPairformer done in {step_trunk - step_st:.1f}s. Starting diffusion sampling...")
+        logger.info(
+            f"EMPairformer done in {step_trunk - step_st:.1f}s. Starting diffusion sampling..."
+        )
         # Sample diffusion
         # [..., N_sample, N_atom, 3]
         N_sample = self.configs.sample_diffusion["N_sample"]
@@ -448,30 +507,35 @@ class CryoZeta(nn.Module):
         noise_schedule = self.inference_noise_scheduler(
             N_step=N_step, device=s_inputs.device, dtype=s_inputs.dtype
         )
-        pred_dict["coordinate"] = self.sample_diffusion(
-            denoise_net=self.diffusion_module,
-            input_feature_dict=input_feature_dict,
-            s_inputs=s_inputs,
-            s_trunk=s,
-            z_trunk=z,
-            N_sample=N_sample,
-            noise_schedule=noise_schedule,
-            inplace_safe=inplace_safe,
-        )
+        with record_function("diffusion_sampling"):
+            pred_dict["coordinate"] = self.sample_diffusion(
+                denoise_net=self.diffusion_module,
+                input_feature_dict=input_feature_dict,
+                s_inputs=s_inputs,
+                s_trunk=s,
+                z_trunk=z,
+                N_sample=N_sample,
+                noise_schedule=noise_schedule,
+                inplace_safe=inplace_safe,
+                use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
+            )
 
         step_diffusion = time.time()
         time_tracker.update({"diffusion": step_diffusion - step_trunk})
-        logger.info(f"Diffusion sampling done in {step_diffusion - step_trunk:.1f}s. Starting model fitting...")
+        logger.info(
+            f"Diffusion sampling done in {step_diffusion - step_trunk:.1f}s. Starting model fitting..."
+        )
         if N_token > 2000:
             torch.cuda.empty_cache()
 
-        # Distogram logits: log contact_probs only, to reduce the dimension
-        pred_dict["contact_probs"] = sample_confidence.compute_contact_prob(
-            distogram_logits=self.distogram_head(z),
-            **sample_confidence.get_bin_params(self.configs.loss.distogram),
-        )  # [N_token, N_token]
-        pred_dict["point_residue_logits"] = self.point_residue_head(pz.unsqueeze(0))
-        pred_dict["point_noise_logits"] = self.point_noise_head(pz.unsqueeze(0))
+        with record_function("prediction_heads"):
+            # Distogram logits: log contact_probs only, to reduce the dimension
+            pred_dict["contact_probs"] = sample_confidence.compute_contact_prob(
+                distogram_logits=self.distogram_head(z),
+                **sample_confidence.get_bin_params(self.configs.loss.distogram),
+            )  # [N_token, N_token]
+            pred_dict["point_residue_logits"] = self.point_residue_head(pz.unsqueeze(0))
+            pred_dict["point_noise_logits"] = self.point_noise_head(pz.unsqueeze(0))
 
         ca_mask = input_feature_dict["atom_array"].centre_atom_mask
         ca_mask = ca_mask.astype(bool)
@@ -509,49 +573,50 @@ class CryoZeta(nn.Module):
                         big_distance_count += 1
             num_big_distances.append(big_distance_count)
 
-        coordinate_svd_08, recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08 = (
-            FitModelPoints(
-                pred_dict["point_residue_logits"],
-                ca_coordinate,
-                pred_dict["coordinate"],
-                elements,
-                input_feature_dict["em_support_points"],
-                input_feature_dict["all_support_points"],
-                0.8,
-                input_feature_dict["dump_dir"],
-                pdb_id,
-                map_path=input_feature_dict.get("map_path", None),
-                resolution=input_feature_dict.get("resolution", None),
-                contour_level=input_feature_dict.get("contour_level", None),
+        with record_function("model_fitting"):
+            coordinate_svd_08, recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08 = (
+                FitModelPoints(
+                    pred_dict["point_residue_logits"],
+                    ca_coordinate,
+                    pred_dict["coordinate"],
+                    elements,
+                    input_feature_dict["em_support_points"],
+                    input_feature_dict["all_support_points"],
+                    0.8,
+                    input_feature_dict["dump_dir"],
+                    pdb_id,
+                    map_path=input_feature_dict.get("map_path", None),
+                    resolution=input_feature_dict.get("resolution", None),
+                    contour_level=input_feature_dict.get("contour_level", None),
+                )
             )
-        )
-        coordinate_svd_04, recall_score_svd_04, ccc_mask_svd_04, ccc_box_svd_04 = (
-            FitModelPoints(
-                pred_dict["point_residue_logits"],
-                ca_coordinate,
-                pred_dict["coordinate"],
-                elements,
-                input_feature_dict["em_support_points"],
-                input_feature_dict["all_support_points"],
-                0.4,
-                input_feature_dict["dump_dir"],
-                pdb_id,
-                map_path=input_feature_dict.get("map_path", None),
-                resolution=input_feature_dict.get("resolution", None),
-                contour_level=input_feature_dict.get("contour_level", None),
+            coordinate_svd_04, recall_score_svd_04, ccc_mask_svd_04, ccc_box_svd_04 = (
+                FitModelPoints(
+                    pred_dict["point_residue_logits"],
+                    ca_coordinate,
+                    pred_dict["coordinate"],
+                    elements,
+                    input_feature_dict["em_support_points"],
+                    input_feature_dict["all_support_points"],
+                    0.4,
+                    input_feature_dict["dump_dir"],
+                    pdb_id,
+                    map_path=input_feature_dict.get("map_path", None),
+                    resolution=input_feature_dict.get("resolution", None),
+                    contour_level=input_feature_dict.get("contour_level", None),
+                )
             )
-        )
-        coordinate_teaser, recall_score_teaser, ccc_mask_teaser, ccc_box_teaser = (
-            FitModelPointsTeaser(
-                ca_coordinate,
-                pred_dict["coordinate"],
-                elements,
-                input_feature_dict["all_support_points"],
-                map_path=input_feature_dict.get("map_path", None),
-                resolution=input_feature_dict.get("resolution", None),
-                contour_level=input_feature_dict.get("contour_level", None),
+            coordinate_teaser, recall_score_teaser, ccc_mask_teaser, ccc_box_teaser = (
+                FitModelPointsTeaser(
+                    ca_coordinate,
+                    pred_dict["coordinate"],
+                    elements,
+                    input_feature_dict["all_support_points"],
+                    map_path=input_feature_dict.get("map_path", None),
+                    resolution=input_feature_dict.get("resolution", None),
+                    contour_level=input_feature_dict.get("contour_level", None),
+                )
             )
-        )
         pred_dict["coordinate_svd_0.8"] = coordinate_svd_08
         pred_dict["coordinate_svd_0.4"] = coordinate_svd_04
         pred_dict["coordinate_teaser"] = coordinate_teaser
@@ -682,25 +747,29 @@ class CryoZeta(nn.Module):
         # Confidence logits
         step_fitting = time.time()
         logger.info(f"Model fitting done in {step_fitting - step_diffusion:.1f}s. Running confidence head...")
-        (
-            pred_dict["plddt"],
-            pred_dict["pae"],
-            pred_dict["pde"],
-            pred_dict["resolved"],
-        ) = self.run_confidence_head(
-            input_feature_dict=input_feature_dict,
-            s_inputs=s_inputs,
-            s_trunk=s,
-            z_trunk=z,
-            pair_mask=None,
-            x_pred_coords=pred_dict["coordinate"],
-            use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-            and deepspeed_evo_attention_condition_satisfy,
-            use_lma=self.configs.use_lma,
-            inplace_safe=inplace_safe,
-            chunk_size=chunk_size,
-        )
+        with record_function("confidence_head"):
+            (
+                pred_dict["plddt"],
+                pred_dict["pae"],
+                pred_dict["pde"],
+                pred_dict["resolved"],
+            ) = self.run_confidence_head(
+                input_feature_dict=input_feature_dict,
+                s_inputs=s_inputs,
+                s_trunk=s,
+                z_trunk=z,
+                pair_mask=None,
+                x_pred_coords=pred_dict["coordinate"],
+                use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
+                and deepspeed_evo_attention_condition_satisfy,
+                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
+                use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
+                use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
+                use_lma=self.configs.use_lma,
+                inplace_safe=inplace_safe,
+                chunk_size=chunk_size,
+            )
 
         step_confidence = time.time()
         time_tracker.update({"confidence": step_confidence - step_fitting})
@@ -736,6 +805,9 @@ class CryoZeta(nn.Module):
                 elements_one_hot=None,
             )
         )
+
+        # Reload trunk modules back to GPU for next model seed / next batch.
+        self._reload_trunk(trunk_device)
 
         return pred_dict, log_dict, time_tracker
 
