@@ -219,7 +219,7 @@ viewers such as ChimeraX or PyMOL.
 
 ## License
 
-- The **source code** in this repository is released under the **GNU General Public License v3.0 (GPLv3)** (see `LICENSE`).
+- The **source code** in this repository is released under the [GNU General Public License v3.0](LICENSE).
 - The **trained model weights** are distributed under a separate license and are **free for academic and non-commercial research use only**.
 
 Commercial use of the model weights is not permitted without permission.  
