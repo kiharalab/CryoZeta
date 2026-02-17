@@ -217,6 +217,17 @@ top-ranked predicted structures selected from both the standard and interpolatio
 models. Each structure is in **mmCIF** format and can be opened with molecular
 viewers such as ChimeraX or PyMOL.
 
+## License
+
+- The **source code** in this repository is released under the **GNU General Public License v3.0 (GPLv3)** (see `LICENSE`).
+- The **trained model weights** are distributed under a separate license and are **free for academic and non-commercial research use only**.
+
+Commercial use of the model weights is not permitted without permission.  
+For commercial licensing inquiries, please contact the authors.
+
+See `WEIGHTS_LICENSE.md` for full terms.
+
+
 ## Development
 
 <details>
