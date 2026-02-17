@@ -146,6 +146,7 @@ use_deepspeed_evo_attention=true
 use_cuequivariance_attention=true
 use_cuequivariance_multiplicative_update=true
 use_cuequivariance_attention_pair_bias=true
+use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 mode="combined"  # cryozeta, cryozeta-interpolate, or combined
 overwrite=false   # set to true to re-run even if output already exists
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
@@ -187,6 +188,7 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --use_cuequivariance_attention ${use_cuequivariance_attention} \
     --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
     --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+    --use_opm_tilelang ${use_opm_tilelang} \
     --model.N_cycle ${N_cycle} \
     --sample_diffusion.N_sample ${N_sample} \
     --sample_diffusion.N_step ${N_step} \
@@ -207,6 +209,7 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --use_cuequivariance_attention ${use_cuequivariance_attention} \
     --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
     --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+    --use_opm_tilelang ${use_opm_tilelang} \
     --model.N_cycle ${N_cycle} \
     --sample_diffusion.N_sample ${N_sample} \
     --sample_diffusion.N_step ${N_step} \
