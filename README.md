@@ -283,6 +283,21 @@ CryoZeta builds upon and is inspired by several excellent open-source projects:
 
 ### Citations
 
+Please cite our paper:
+
+```bibtex
+@article{zhang2026accurate,
+  title        = {Accurate macromolecular complex modeling for cryo-EM},
+  author       = {Zhang, Zicong and Li, Shu and Farheen, Farhanaz and Kagaya, Yuki and Liu, Boyuan and Ibtehaz, Nabil and Terashi, Genki and Nakamura, Tsukasa and Zhu, Han and Khan, Kafi and Zhang, Yuanyuan and Kihara, Daisuke},
+  journal      = {bioRxiv},
+  year         = {2026},
+  doi          = {10.64898/2026.02.13.705846},
+  url          = {https://www.biorxiv.org/content/10.64898/2026.02.13.705846v1},
+  note         = {Preprint}
+}
+```
+
+
 <details>
 <summary>Protenix</summary>
 
