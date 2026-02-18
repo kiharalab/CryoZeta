@@ -10,7 +10,7 @@ GPU_ID=${2:-0}
 
 export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=0  # Set to 0 to use original einsum OPM
+export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # ── Auto-detect pixi environment based on GPU ─────────────────────────────────
 detect_pixi_env() {
@@ -53,8 +53,8 @@ N_step=20
 N_cycle=10
 seed=101
 use_deepspeed_evo_attention=true
-use_cuequivariance_attention=false
-use_cuequivariance_multiplicative_update=false
+use_cuequivariance_attention=true
+use_cuequivariance_multiplicative_update=true
 use_cuequivariance_attention_pair_bias=false
 use_opm_tilelang=false
 overwrite=false
