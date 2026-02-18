@@ -129,6 +129,12 @@ fi
 export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
+# Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
+# finds the pixi-managed nvcc (and matching host-compiler compatibility)
+# instead of a system-installed CUDA toolkit.
+PIXI_PREFIX="$(pixi run --frozen -e "${PIXI_ENV}" bash -c 'echo $CONDA_PREFIX')"
+export CUDA_HOME="${PIXI_PREFIX}"
+
 # ── Inference parameters ──────────────────────────────────────────────────────
 N_sample=5
 N_step=20
