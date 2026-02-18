@@ -225,7 +225,7 @@ viewers such as ChimeraX or PyMOL.
 Commercial use of the model weights is not permitted without permission.  
 For commercial licensing inquiries, please contact the authors.
 
-See `WEIGHTS_LICENSE.md` for full terms.
+See [WEIGHTS_LICENSE.md](WEIGHT_LICENSE.md) for full terms.
 
 
 ## Development
