@@ -537,6 +537,9 @@ class CryoZeta(nn.Module):
             pred_dict["point_residue_logits"] = self.point_residue_head(pz.unsqueeze(0))
             pred_dict["point_noise_logits"] = self.point_noise_head(pz.unsqueeze(0))
 
+        # Free tensors only needed by prediction heads
+        del pz, _p
+
         ca_mask = input_feature_dict["atom_array"].centre_atom_mask
         ca_mask = ca_mask.astype(bool)
         ca_coordinate = pred_dict["coordinate"][..., ca_mask, :]
@@ -744,6 +747,18 @@ class CryoZeta(nn.Module):
         output_dict["point_residue_logits"] = pred_dict["point_residue_logits"]
         torch.save(output_dict, f"{output_dir}/output_dict_{pdb_id}.pt")
 
+        # Free fitting-related locals and output_dict (already saved to disk)
+        del output_dict, ca_coordinate, ca_mask
+        del coordinate_svd_08, coordinate_svd_04, coordinate_teaser
+        del coordinate_superimposed
+
+        # Offload modules not needed by confidence head to CPU
+        self.diffusion_module.to("cpu")
+        self.distogram_head.to("cpu")
+        self.point_residue_head.to("cpu")
+        self.point_noise_head.to("cpu")
+        torch.cuda.empty_cache()
+
         # Confidence logits
         step_fitting = time.time()
         logger.info(f"Model fitting done in {step_fitting - step_diffusion:.1f}s. Running confidence head...")
@@ -806,8 +821,12 @@ class CryoZeta(nn.Module):
             )
         )
 
-        # Reload trunk modules back to GPU for next model seed / next batch.
+        # Reload all offloaded modules back to GPU for next model seed / next batch.
         self._reload_trunk(trunk_device)
+        self.diffusion_module.to(trunk_device)
+        self.distogram_head.to(trunk_device)
+        self.point_residue_head.to(trunk_device)
+        self.point_noise_head.to(trunk_device)
 
         return pred_dict, log_dict, time_tracker
 
