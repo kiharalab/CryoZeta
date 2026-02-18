@@ -1,4 +1,4 @@
-# CryoZeta Inference
+# CryoZeta
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![CUDA](https://img.shields.io/badge/CUDA-11%20%7C%2012%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
