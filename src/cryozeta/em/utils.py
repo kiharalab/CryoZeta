@@ -205,6 +205,20 @@ def localshift_numba(point_cd, reference, fmaxd, fsiv, n_steps, tol):
     return point_cd
 
 
+def _meanshiftpp_gpu_fallback(
+    points: torch.Tensor, bandwidth: float, n_steps: int, tol: float
+) -> torch.Tensor:
+    """Run meanshiftpp_torch on GPU first; fall back to CPU on failure."""
+    if torch.cuda.is_available():
+        try:
+            gpu_points = points.to("cuda", non_blocking=True)
+            result = meanshiftpp_torch(gpu_points, bandwidth, n_steps, tol)
+            return result.to("cpu")
+        except Exception as e:
+            logger.warning(f"GPU meanshift failed, falling back to CPU: {e}")
+    return meanshiftpp_torch(points, bandwidth, n_steps, tol)
+
+
 def get_shifted_indices(
     point_cd: torch.Tensor,
     reference_np: np.ndarray,
@@ -219,7 +233,7 @@ def get_shifted_indices(
     )
     point_cd_shifted = torch.from_numpy(point_cd_shifted_np)
     point_cd_shifted = point_cd_shifted.round_(decimals=3).unique(dim=0)
-    point_cd_shifted = meanshiftpp_torch(
+    point_cd_shifted = _meanshiftpp_gpu_fallback(
         point_cd_shifted, bandwidth=0.5, n_steps=100, tol=1e-5
     )
     point_cd_shifted = point_cd_shifted.round_(decimals=3).unique(dim=0)
