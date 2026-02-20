@@ -125,7 +125,10 @@ def parse_mrc(
 
     ca_label = torch.tensor(mrc_data["main_atom_coords"])  # (N, 3)
 
-    has_interp = "interpolate_confidence" in mrc_data
+    has_interp = (
+        "interpolate_confidence" in mrc_data
+        and mrc_data["interpolate_confidence"] is not None
+    )
     logger.info(f"has_interpolate_confidence: {has_interp}")
 
     # Use all features: 20 protein + 4 DNA + 4 RNA

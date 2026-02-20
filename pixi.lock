@@ -2983,7 +2983,7 @@ packages:
 - pypi: ./
   name: cryozeta
   version: 0.1.0
-  sha256: 42e8f0be19ef06ab60e7bf6288dba8ab1f0d5891436e9b55f1c3558597363eb9
+  sha256: 86b84805c60cd7cb6d5cdf4e3266e07c8b790d6a35591462354094f32e3d7c80
   requires_python: '>=3.12,<3.13'
 - pypi: https://files.pythonhosted.org/packages/6b/e7/237155ae19a9023de7e30ec64e5d99a9431a567407ac21170a046d22a5a3/cryptography-46.0.5-cp311-abi3-manylinux_2_28_x86_64.whl
   name: cryptography

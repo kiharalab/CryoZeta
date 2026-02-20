@@ -61,6 +61,7 @@ class CryoEMInferenceConfig:
     contour_level_scale: float = 0.5
     no_protein: bool = False
     no_dna_rna: bool = False
+    interp_threshold: int = 3000
 
 
 def interpolate_and_sample(sampled_indices, atom_label, num_steps=5, num_points=None):
@@ -299,8 +300,15 @@ def post_process(
     ]
 
     # Calculate interpolated confidence with optional random sampling
+    num_total_points = len(main_atom_indices)
     if disable_interpolation:
         logger.info(f"[{emdb_id}] Disabling interpolation")
+        interpolated_confidence = None
+    elif config is not None and num_total_points > config.interp_threshold:
+        logger.info(
+            f"[{emdb_id}] Number of points ({num_total_points}) exceeds "
+            f"interp_threshold ({config.interp_threshold}), skipping interpolation"
+        )
         interpolated_confidence = None
     else:
         if num_points is not None:
@@ -646,6 +654,11 @@ def run(
     no_dna_rna: bool = typer.Option(
         False, "--no-dna-rna", help="Exclude DNA/RNA predictions"
     ),
+    interp_threshold: int = typer.Option(
+        3000,
+        "--interp-threshold",
+        help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -672,6 +685,7 @@ def run(
         contour_level_scale=contour_level_scale,
         no_protein=no_protein,
         no_dna_rna=no_dna_rna,
+        interp_threshold=interp_threshold,
     )
 
     input_path = Path(input_file)
@@ -704,6 +718,11 @@ def json_run(
     compile_models: bool = typer.Option(
         False, "--compile", help="Compile models for faster inference"
     ),
+    interp_threshold: int = typer.Option(
+        3000,
+        "--interp-threshold",
+        help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -725,6 +744,7 @@ def json_run(
         batch_size=batch_size,
         compile=compile_models,
         device=device,
+        interp_threshold=interp_threshold,
     )
     inference = CryoEMInference(config)
 
