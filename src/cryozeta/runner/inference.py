@@ -12,6 +12,7 @@
 # code remains under Apache-2.0; the combined work is distributed
 # under GPLv3.
 
+import json
 import os
 import traceback
 from collections.abc import Mapping
@@ -150,7 +151,38 @@ class InferenceRunner:
             logger.info(msg)
 
 
+def _has_interpolation_features(em_file_dir: str, sample_name: str) -> bool:
+    """Check whether the detection .pt file contains interpolation features."""
+    pt_path = opjoin(
+        em_file_dir, sample_name, "CryoZeta-Detection", f"{sample_name}.pt"
+    )
+    if not opexists(pt_path):
+        return False
+    pt_data = torch.load(pt_path, weights_only=False)
+    return (
+        "interpolate_confidence" in pt_data
+        and pt_data["interpolate_confidence"] is not None
+    )
+
+
 def main(configs: Any) -> None:
+    # When use_interpolation is requested, pre-check which entries actually
+    # have interpolation features in their detection output.  Entries that
+    # lack interpolation features are collected into a skip-set so we can
+    # avoid featurisation errors and skip them gracefully.
+    skip_interp_names: set[str] = set()
+    if configs.use_interpolation:
+        with open(configs.input_json_path) as f:
+            input_entries = json.load(f)
+        for entry in input_entries:
+            name = entry.get("name")
+            if name and not _has_interpolation_features(configs.em_file_dir, name):
+                skip_interp_names.add(name)
+                logger.info(
+                    f"[pre-check] {name}: no interpolation features in detection output, "
+                    "will skip CryoZeta-Interpolate inference for this entry"
+                )
+
     # Runner
     runner = InferenceRunner(configs)
 
@@ -170,6 +202,14 @@ def main(configs: Any) -> None:
                 ]
 
                 sample_name = data["sample_name"]
+
+                # Skip entries that lack interpolation features
+                if sample_name in skip_interp_names:
+                    logger.info(
+                        f"[Rank {DIST_WRAPPER.rank}] {sample_name}: skipping "
+                        "CryoZeta-Interpolate (no interpolation features)"
+                    )
+                    continue
 
                 # Per-entry stage directory: {dump_dir}/{name}/{stage_name}
                 entry_stage_dir = opjoin(
