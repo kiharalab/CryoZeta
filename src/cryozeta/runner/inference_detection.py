@@ -28,7 +28,6 @@ from cryozeta.em import (
     crop_mrc,
     get_detection_model,
     get_shifted_indices,
-    meanshiftpp_torch,
     normalize_mrc,
     parse_mrc,
     resample_mrc,
@@ -36,6 +35,7 @@ from cryozeta.em import (
     sliding_window_inference,
     write_coords_to_pdb,
 )
+from cryozeta.em.utils import _meanshiftpp_gpu_fallback
 
 
 @dataclass
@@ -61,6 +61,7 @@ class CryoEMInferenceConfig:
     contour_level_scale: float = 0.5
     no_protein: bool = False
     no_dna_rna: bool = False
+    interp_threshold: int = 3000
 
 
 def interpolate_and_sample(sampled_indices, atom_label, num_steps=5, num_points=None):
@@ -121,7 +122,6 @@ def post_process(
     emdb_id: str,
     num_points: int | None = None,
     resolution: float = 1.0,
-    prefer_gpu: bool = True,
     disable_interpolation: bool = False,
     config: CryoEMInferenceConfig = None,
 ):
@@ -132,7 +132,6 @@ def post_process(
     fsiv = 0.5
     n_steps = 100
     tol = 1e-5
-    use_cuda = bool(prefer_gpu and torch.cuda.is_available())
 
     prot_ca_map_np = maps_dict["prot_ca_map"].cpu().numpy()
     rdna_c1p_map_np = maps_dict["rdna_c1p_map"].cpu().numpy()
@@ -191,36 +190,12 @@ def post_process(
             tol=tol,
         )
         logger.info(f"[{emdb_id}] Number of CA indices: {len(prot_ca_shifted_indices)}")
-        # Try GPU for clustering first, then fall back to CPU
-        if use_cuda:
-            try:
-                _gpu_points = prot_ca_shifted_indices.to("cuda", non_blocking=True)
-                prot_ca_clustered_indices = meanshiftpp_torch(
-                    _gpu_points, bandwidth=5.0, n_steps=100, tol=1e-5
-                )
-                _, prot_ca_cluster_ids = torch.unique(
-                    prot_ca_clustered_indices, dim=0, return_inverse=True
-                )
-                prot_ca_cluster_ids = prot_ca_cluster_ids.to("cpu")
-                prot_ca_shifted_indices = _gpu_points.to("cpu")
-                logger.info(f"[{emdb_id}] Meanshift clustering on GPU")
-            except Exception as _e:
-                logger.warning(
-                    f"[{emdb_id}] GPU meanshift failed or unavailable, falling back to CPU: {_e}"
-                )
-                prot_ca_clustered_indices = meanshiftpp_torch(
-                    prot_ca_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
-                )
-                _, prot_ca_cluster_ids = torch.unique(
-                    prot_ca_clustered_indices, dim=0, return_inverse=True
-                )
-        else:
-            prot_ca_clustered_indices = meanshiftpp_torch(
-                prot_ca_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
-            )
-            _, prot_ca_cluster_ids = torch.unique(
-                prot_ca_clustered_indices, dim=0, return_inverse=True
-            )
+        prot_ca_clustered_indices = _meanshiftpp_gpu_fallback(
+            prot_ca_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
+        )
+        _, prot_ca_cluster_ids = torch.unique(
+            prot_ca_clustered_indices, dim=0, return_inverse=True
+        )
         main_atom_indices = prot_ca_shifted_indices.clone()
         num_ca_atoms = len(prot_ca_shifted_indices)
     else:
@@ -242,36 +217,12 @@ def post_process(
         logger.info(
             f"[{emdb_id}] Number of C1P(R/DNA) indices: {len(rdna_c1p_shifted_indices)}"
         )
-        # Try GPU for clustering first, then fall back to CPU
-        if use_cuda:
-            try:
-                _gpu_points = rdna_c1p_shifted_indices.to("cuda", non_blocking=True)
-                rdna_c1p_clustered_indices = meanshiftpp_torch(
-                    _gpu_points, bandwidth=5.0, n_steps=100, tol=1e-5
-                )
-                _, rdna_c1p_cluster_ids = torch.unique(
-                    rdna_c1p_clustered_indices, dim=0, return_inverse=True
-                )
-                rdna_c1p_cluster_ids = rdna_c1p_cluster_ids.to("cpu")
-                rdna_c1p_shifted_indices = _gpu_points.to("cpu")
-                logger.info(f"[{emdb_id}] Meanshift clustering on GPU (R/DNA)")
-            except Exception as _e:
-                logger.warning(
-                    f"[{emdb_id}] GPU meanshift (R/DNA) failed, falling back to CPU: {_e}"
-                )
-                rdna_c1p_clustered_indices = meanshiftpp_torch(
-                    rdna_c1p_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
-                )
-                _, rdna_c1p_cluster_ids = torch.unique(
-                    rdna_c1p_clustered_indices, dim=0, return_inverse=True
-                )
-        else:
-            rdna_c1p_clustered_indices = meanshiftpp_torch(
-                rdna_c1p_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
-            )
-            _, rdna_c1p_cluster_ids = torch.unique(
-                rdna_c1p_clustered_indices, dim=0, return_inverse=True
-            )
+        rdna_c1p_clustered_indices = _meanshiftpp_gpu_fallback(
+            rdna_c1p_shifted_indices, bandwidth=5.0, n_steps=100, tol=1e-5
+        )
+        _, rdna_c1p_cluster_ids = torch.unique(
+            rdna_c1p_clustered_indices, dim=0, return_inverse=True
+        )
         if main_atom_indices.numel() > 0:
             main_atom_indices = torch.cat(
                 [main_atom_indices, rdna_c1p_shifted_indices], dim=0
@@ -349,8 +300,15 @@ def post_process(
     ]
 
     # Calculate interpolated confidence with optional random sampling
+    num_total_points = len(main_atom_indices)
     if disable_interpolation:
         logger.info(f"[{emdb_id}] Disabling interpolation")
+        interpolated_confidence = None
+    elif config is not None and num_total_points > config.interp_threshold:
+        logger.info(
+            f"[{emdb_id}] Number of points ({num_total_points}) exceeds "
+            f"interp_threshold ({config.interp_threshold}), skipping interpolation"
+        )
         interpolated_confidence = None
     else:
         if num_points is not None:
@@ -696,6 +654,11 @@ def run(
     no_dna_rna: bool = typer.Option(
         False, "--no-dna-rna", help="Exclude DNA/RNA predictions"
     ),
+    interp_threshold: int = typer.Option(
+        3000,
+        "--interp-threshold",
+        help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -722,6 +685,7 @@ def run(
         contour_level_scale=contour_level_scale,
         no_protein=no_protein,
         no_dna_rna=no_dna_rna,
+        interp_threshold=interp_threshold,
     )
 
     input_path = Path(input_file)
@@ -754,6 +718,11 @@ def json_run(
     compile_models: bool = typer.Option(
         False, "--compile", help="Compile models for faster inference"
     ),
+    interp_threshold: int = typer.Option(
+        3000,
+        "--interp-threshold",
+        help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -775,6 +744,7 @@ def json_run(
         batch_size=batch_size,
         compile=compile_models,
         device=device,
+        interp_threshold=interp_threshold,
     )
     inference = CryoEMInference(config)
 
