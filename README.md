@@ -1,4 +1,4 @@
-# CryoZeta Inference
+# CryoZeta
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![CUDA](https://img.shields.io/badge/CUDA-11%20%7C%2012%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
@@ -225,7 +225,7 @@ viewers such as ChimeraX or PyMOL.
 Commercial use of the model weights is not permitted without permission.  
 For commercial licensing inquiries, please contact the authors.
 
-See `WEIGHTS_LICENSE.md` for full terms.
+See [WEIGHT_LICENSE.md](WEIGHT_LICENSE.md) for full terms.
 
 
 ## Development
@@ -282,6 +282,21 @@ CryoZeta builds upon and is inspired by several excellent open-source projects:
 - **[VESPER](https://github.com/kiharalab/VESPER_CUDA)** (Kihara Lab) -- A GPU-accelerated cryo-EM map comparison and fitting tool.
 
 ### Citations
+
+Please cite our paper:
+
+```bibtex
+@article{zhang2026accurate,
+  title        = {Accurate macromolecular complex modeling for cryo-EM},
+  author       = {Zhang, Zicong and Li, Shu and Farheen, Farhanaz and Kagaya, Yuki and Liu, Boyuan and Ibtehaz, Nabil and Terashi, Genki and Nakamura, Tsukasa and Zhu, Han and Khan, Kafi and Zhang, Yuanyuan and Kihara, Daisuke},
+  journal      = {bioRxiv},
+  year         = {2026},
+  doi          = {10.64898/2026.02.13.705846},
+  url          = {https://www.biorxiv.org/content/10.64898/2026.02.13.705846v1},
+  note         = {Preprint}
+}
+```
+
 
 <details>
 <summary>Protenix</summary>
