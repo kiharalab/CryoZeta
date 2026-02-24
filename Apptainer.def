@@ -15,18 +15,8 @@ From: nvidia/cuda:12.6.3-base-ubuntu24.04
     
     # Install build requirements for TEASER++ and system libraries
     apt-get update && apt-get install -y \
-        curl \
-        git \
-        cmake \
-        build-essential \
-        libstdc++6 \
-        wget \
-        libeigen3-dev \
-        libboost-all-dev \
-        libxrender1 \
-        libxext6 \
-        libgl1 \
-        libglib2.0-0 \
+        curl git cmake build-essential wget \
+        libxrender1 libxext6 libgl1 libglib2.0-0 \
         && rm -rf /var/lib/apt/lists/*
 
     # Install Miniforge
@@ -62,7 +52,7 @@ From: nvidia/cuda:12.6.3-base-ubuntu24.04
         eigen \
         pybind11 \
         cuda-nvcc \
-        cuda-cudart-dev \
+        cuda-libraries-dev \
         cutlass \
         -c nvidia -c conda-forge -c pytorch
 
@@ -79,6 +69,11 @@ From: nvidia/cuda:12.6.3-base-ubuntu24.04
             -DCMAKE_PREFIX_PATH="${CONDA_PREFIX}" && \
         cmake --build externals/TEASER-plusplus/build -j$(nproc) \
     )
+
+    # The cmake build produces the .so but doesn't copy __init__.py, so the
+    # pybind module can't be imported as a package without it.
+    cp externals/TEASER-plusplus/python/teaserpp_python/__init__.py \
+       externals/TEASER-plusplus/build/python/teaserpp_python/__init__.py 2>/dev/null || true
 
     # Install pip dependencies using uv
     uv pip install \
