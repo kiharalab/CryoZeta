@@ -101,3 +101,18 @@ unset _TEASER_BUILD_PY
 
 # CUTLASS headers (provided by the pixi conda package)
 export CUTLASS_PATH="${CONDA_PREFIX}"
+
+# ── JIT compilation cache directories ────────────────────────────────────────
+# Redirect all JIT-compiled kernel caches to a per-user directory so the
+# project can be installed in a shared / read-only location (container, NFS).
+_CRYOZETA_CACHE="${CRYOZETA_CACHE_DIR:-${HOME}/.cache/cryozeta}"
+export CRYOZETA_CACHE_DIR="${_CRYOZETA_CACHE}"
+
+# PyTorch cpp_extension (used by DeepSpeed ops, custom CUDA kernels, etc.)
+export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-${_CRYOZETA_CACHE}/torch_extensions}"
+
+# torch.compile / Inductor + Triton
+export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${_CRYOZETA_CACHE}/inductor}"
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${_CRYOZETA_CACHE}/triton}"
+
+unset _CRYOZETA_CACHE

@@ -129,6 +129,14 @@ fi
 export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
+# JIT compilation cache — per-user for shared / read-only installs
+_CRYOZETA_CACHE="${CRYOZETA_CACHE_DIR:-${HOME}/.cache/cryozeta}"
+export CRYOZETA_CACHE_DIR="${_CRYOZETA_CACHE}"
+export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-${_CRYOZETA_CACHE}/torch_extensions}"
+export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${_CRYOZETA_CACHE}/inductor}"
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${_CRYOZETA_CACHE}/triton}"
+unset _CRYOZETA_CACHE
+
 # Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
 # finds the pixi-managed nvcc (and matching host-compiler compatibility)
 # instead of a system-installed CUDA toolkit.

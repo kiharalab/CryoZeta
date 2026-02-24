@@ -30,6 +30,10 @@ except ImportError:
     from cryozeta.model.layer_norm.torch_ext_compile import compile
 
     current_dir = os.path.dirname(__file__)
+    _cache_root = os.path.join(
+        os.environ.get("CRYOZETA_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".cache", "cryozeta")),
+        "torch_extensions",
+    )
     fastfold_layer_norm_cuda = compile(
         name="fastfold_layer_norm_cuda",
         sources=[
@@ -37,7 +41,7 @@ except ImportError:
             for file in ["layer_norm_cuda.cpp", "layer_norm_cuda_kernel.cu"]
         ],
         extra_include_paths=[f"{current_dir}/kernel"],
-        build_directory=current_dir,
+        build_directory=_cache_root,
     )
 
 

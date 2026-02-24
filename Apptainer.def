@@ -1,0 +1,170 @@
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-base-ubuntu24.04
+
+%labels
+    Author "KiharaLab"
+    Description "Apptainer container for CryoZeta Inference Pipeline"
+    Version "0.1.0"
+
+%files
+    # Copy the current working directory recursively into the container
+    . /app/CryoZeta
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    
+    # Install build requirements for TEASER++ and system libraries
+    apt-get update && apt-get install -y \
+        curl \
+        git \
+        cmake \
+        build-essential \
+        libstdc++6 \
+        wget \
+        libeigen3-dev \
+        libboost-all-dev \
+        libxrender1 \
+        libxext6 \
+        libgl1 \
+        libglib2.0-0 \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install Miniforge
+    wget -qO Miniforge3.sh "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+    bash Miniforge3.sh -b -p /opt/conda
+    rm Miniforge3.sh
+    export PATH="/opt/conda/bin:$PATH"
+
+    # Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="/root/.local/bin:$PATH"
+
+    cd /app/CryoZeta
+
+    # Clean up any host-specific caches or environments that were copied via %files
+    rm -rf .pixi/ externals/ output/ examples/output*/ PIXI_CACHE/ .venv/
+
+    # Clone TEASER++ source (build happens later after conda provides pybind11)
+    test -d externals/TEASER-plusplus || (mkdir -p externals && git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git externals/TEASER-plusplus)
+
+    # Mock the CUDA version so conda can solve pytorch-gpu without a real GPU
+    export CONDA_OVERRIDE_CUDA="12.4"
+
+    # Create conda environment with precise versions for CUDA 12.4 compatibility
+    conda create -y -n cryozeta \
+        python=3.12 \
+        cuda-version=12.4 \
+        pytorch-gpu=2.5.1 \
+        torchvision \
+        numpy \
+        boost \
+        libboost-devel \
+        eigen \
+        pybind11 \
+        cuda-nvcc \
+        cuda-cudart-dev \
+        cutlass \
+        -c nvidia -c conda-forge -c pytorch
+
+    # Initialize the conda environment
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate cryozeta
+
+    # Build TEASER++ now that pybind11 is available from the conda environment
+    test -f externals/TEASER-plusplus/build/libteaser.so || ( \
+        cmake -S externals/TEASER-plusplus -B externals/TEASER-plusplus/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DCMAKE_PREFIX_PATH="${CONDA_PREFIX}" && \
+        cmake --build externals/TEASER-plusplus/build -j$(nproc) \
+    )
+
+    # Install pip dependencies using uv
+    uv pip install \
+        "cuequivariance-ops-torch-cu12>=0.8.0" \
+        "biopython>=1.85" \
+        "biotite==1.0.1" \
+        "deepspeed>=0.16.7" \
+        "dm-tree>=0.1.9" \
+        "einops>=0.8.1" \
+        "gemmi>=0.7.1" \
+        "huggingface-hub>=0.33.0" \
+        "icecream>=2.1.4" \
+        "ipdb>=0.13.13" \
+        "jaxtyping>=0.3.2" \
+        "jupyter>=1.1.1" \
+        "loguru>=0.7.3" \
+        "matplotlib>=3.10.3" \
+        "ml-collections>=1.1.0" \
+        "modelcif>=1.3" \
+        "mrcfile>=1.5.4" \
+        "numba>=0.61.2" \
+        "pandas>=2.2.3" \
+        "pdbeccdutils>=0.8.5" \
+        "protobuf>=6.30.2" \
+        "py3dmol>=2.4.2" \
+        "ray[default]>=2.49.2" \
+        "rdkit>=2025.3.2" \
+        "safetensors>=0.6.2" \
+        "scikit-image>=0.25.2" \
+        "scikit-learn>=1.6.1" \
+        "scipy>=1.15.3" \
+        "tos>=2.8.3" \
+        "tqdm>=4.67.1" \
+        "typer>=0.16.0" \
+        "wandb>=0.19.11" \
+        "git+https://github.com/aubin-tchoi/shot-fpfh" \
+        "open3d>=0.19.0" \
+        "small-gicp<2.0" \
+        "git+https://github.com/kiharalab/VESPER_CUDA.git@main" \
+        "tilelang>=0.0.1" \
+        "cuequivariance-torch>=0.8.0" \
+        -e .
+
+    # Now that huggingface_hub is installed, make sure weights are downloaded
+    python -c "from huggingface_hub import snapshot_download; snapshot_download('KiharaLab/CryoZeta', repo_type='model', local_dir='assets')"
+        
+    # Clean up caches to minimize the final image size
+    conda clean -a -y
+    uv cache clean
+    
+    # Lock permissions so the image is readable/executable by all users
+    chmod -R a+rX /app/CryoZeta
+
+%environment
+    export CRYOZETA_INSTALL_DIR="/app/CryoZeta"
+    export PATH="/opt/conda/bin:$PATH"
+    export CUDA_HOME="/opt/conda/envs/cryozeta"
+    export PYTHONPATH="/app/CryoZeta/externals/TEASER-plusplus/build/python:${PYTHONPATH}"
+    export CUTLASS_PATH="/opt/conda/envs/cryozeta"
+
+    # JIT compilation cache directories — per-user so the read-only container
+    # image works for multiple users without write conflicts.
+    export CRYOZETA_CACHE_DIR="${CRYOZETA_CACHE_DIR:-${HOME}/.cache/cryozeta}"
+    export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-${CRYOZETA_CACHE_DIR}/torch_extensions}"
+    export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${CRYOZETA_CACHE_DIR}/inductor}"
+    export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${CRYOZETA_CACHE_DIR}/triton}"
+
+%runscript
+    # This script runs when executing `apptainer run <image>`
+    # We switch to the app directory first to ensure relative paths like assets/ load properly
+    cd /app/CryoZeta
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate cryozeta
+    exec cryozeta-inference "$@"
+
+%help
+    CryoZeta Singularity/Apptainer Container
+    
+    This container fully encapsulates the CryoZeta pipeline, including the model weights,
+    CUDA toolkits, TEASER++ extensions, and the python ecosystem managed by Miniforge/UV.
+    
+    USAGE (Inference script):
+    apptainer run --nv --bind $(pwd):$(pwd) CryoZeta.sif \
+        --input_json_path /path/to/target.json \
+        --dump_dir /path/to/output
+        
+    USAGE (Custom command):
+    apptainer exec --nv --bind $(pwd):$(pwd) CryoZeta.sif \
+        bash -c "cd /app/CryoZeta && source /opt/conda/etc/profile.d/conda.sh && conda activate cryozeta && cryozeta-detection json-run ..."
