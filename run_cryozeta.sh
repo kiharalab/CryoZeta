@@ -9,8 +9,12 @@ GPU=""
 usage() {
     cat <<EOF
 Usage: $(basename "$0") --gpu ID [OPTIONS] <input_json> <output_dir>
+       $(basename "$0") prepare-ui [--sif PATH]
 
 Run the CryoZeta pipeline (detection → inference → combine) via Apptainer.
+
+Subcommands:
+  prepare-ui          Launch the web UI for preparing input JSON files
 
 Arguments:
   input_json    Path to input JSON file (e.g. examples/example.json)
@@ -45,6 +49,21 @@ NUM_SELECT=5
 SKIP_DETECTION=false
 SKIP_INFERENCE=false
 SKIP_COMBINE=false
+
+# ── Handle prepare-ui subcommand ─────────────────────────────────────
+if [[ "${1:-}" == "prepare-ui" ]]; then
+    shift
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --sif) SIF="$2"; shift 2 ;;
+            *)     echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    [[ -f "$SIF" ]] || { echo "Error: SIF not found: $SIF" >&2; exit 1; }
+    apptainer exec --bind "$(pwd):$(pwd)" "$SIF" bash -c \
+        "cd /app/CryoZeta && source /opt/conda/etc/profile.d/conda.sh && conda activate cryozeta && cryozeta-prepare ui"
+    exit 0
+fi
 
 # ── Parse arguments ──────────────────────────────────────────────────
 POSITIONAL=()

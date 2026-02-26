@@ -18,6 +18,7 @@ requires-python = ">=3.12,<3.13"
 cryozeta-detection = "cryozeta.runner.inference_detection:app"
 cryozeta-inference = "cryozeta.runner.inference:cli"
 cryozeta-combine = "cryozeta.runner.combine:app"
+cryozeta-prepare = "cryozeta.runner.prepare_json:app"
 
 [tool.pixi.workspace]
 channels = ["nvidia", "pytorch", "conda-forge"]

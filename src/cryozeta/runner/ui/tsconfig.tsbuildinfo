@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/validation.ts","./src/components/EntityCard.tsx","./src/components/EntryCard.tsx","./src/components/LaunchDialog.tsx","./src/components/SequenceInput.tsx","./src/lib/utils.ts"],"version":"5.9.3"}
