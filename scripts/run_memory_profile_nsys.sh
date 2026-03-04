@@ -33,8 +33,10 @@ elif [ -d "$(pwd)/.pixi/envs/dev/lib" ]; then
     export LD_LIBRARY_PATH="$(pwd)/.pixi/envs/dev/lib:$LD_LIBRARY_PATH"
 fi
 
-OUTPUT_DIR=output/memory_profile_run
+OUTPUT_DIR=output/nsys_profile
 INPUT_JSON=examples/example.json
+REPORT_NAME="${OUTPUT_DIR}/cryozeta_memory"
+mkdir -p "${OUTPUT_DIR}"
 
 # ── Step 1: Run detection if needed ───────────────────────────────────────
 DETECTION_PT="${OUTPUT_DIR}/9b0l/CryoZeta-Detection/9b0l.pt"
@@ -50,25 +52,43 @@ else
     echo "Detection output already exists, skipping."
 fi
 
-# ── Step 2: Memory profiling ─────────────────────────────────────────────
-echo "Starting memory profiling..."
-pixi run --frozen -e "${PIXI_ENV}" python scripts/profile_memory.py \
-    --seeds 101 \
-    --load_checkpoint_path assets/cryozeta-v0.0.1.safetensors \
-    --em_file_dir "${OUTPUT_DIR}" \
-    --dump_dir "${OUTPUT_DIR}" \
-    --input_json_path "${INPUT_JSON}" \
-    --use_deepspeed_evo_attention true \
-    --model.N_cycle 1 \
-    --sample_diffusion.N_sample 1 \
-    --sample_diffusion.N_step 2 \
-    --data.num_dl_workers 1 \
-    --use_interpolation false \
-    --overwrite true
+# ── Step 2: nsys memory profiling ─────────────────────────────────────────
+echo "Starting nsys memory profiling..."
+
+# Find the pixi python
+PIXI_PYTHON="$(pixi run --frozen -e "${PIXI_ENV}" which python)"
+
+nsys profile \
+    --trace=cuda,nvtx,osrt,cudnn,cublas \
+    --cuda-memory-usage=true \
+    --gpu-metrics-device=all \
+    --capture-range=cudaProfilerApi \
+    --capture-range-end=stop \
+    --force-overwrite=true \
+    --stats=true \
+    -o "${REPORT_NAME}" \
+    "${PIXI_PYTHON}" scripts/profile_memory_nsys.py \
+        --seeds 101 \
+        --load_checkpoint_path assets/cryozeta-v0.0.1.safetensors \
+        --em_file_dir "${OUTPUT_DIR}" \
+        --dump_dir "${OUTPUT_DIR}" \
+        --input_json_path "${INPUT_JSON}" \
+        --use_deepspeed_evo_attention true \
+        --model.N_cycle 1 \
+        --sample_diffusion.N_sample 1 \
+        --sample_diffusion.N_step 2 \
+        --data.num_dl_workers 1 \
+        --use_interpolation false \
+        --overwrite true
 
 echo ""
-echo "Memory profiling complete. Outputs:"
-echo "  ${OUTPUT_DIR}/memory_profile/memory_timeline.html  — interactive memory timeline"
-echo "  ${OUTPUT_DIR}/memory_profile/memory_snapshot.pickle — drag to https://pytorch.org/memory_viz"
-echo "  ${OUTPUT_DIR}/memory_profile/memory_trace.json      — open at https://ui.perfetto.dev"
-echo "  ${OUTPUT_DIR}/memory_profile/memory_stacks.txt      — for flamegraph generation"
+echo "nsys profiling complete. Outputs:"
+echo "  ${REPORT_NAME}.nsys-rep  — open in Nsight Systems GUI"
+echo "  ${REPORT_NAME}.sqlite    — queryable with nsys stats / sqlite3"
+echo ""
+echo "Quick stats from CLI:"
+echo "  nsys stats ${REPORT_NAME}.nsys-rep"
+echo ""
+echo "To view memory timeline + NVTX ranges:"
+echo "  Open ${REPORT_NAME}.nsys-rep in Nsight Systems GUI"
+echo "  -> Enable 'CUDA Memory Operations' and 'NVTX' rows"
