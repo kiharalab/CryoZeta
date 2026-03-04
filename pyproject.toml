@@ -51,13 +51,13 @@ boost = ">=1.82"
 libboost-devel = ">=1.82"
 eigen = "3.4.*"
 cutlass = "*"
-gxx = ">=13,<14"
-gcc = ">=13,<14"
 
 [tool.pixi.feature.cu11.dependencies]
 cuda-version = "11.8.*"
 cudatoolkit = "11.8.*"
 pytorch-gpu = ">=2.0.0,<2.5.0"
+gxx = ">=11,<12"
+gcc = ">=11,<12"
 
 [tool.pixi.feature.cu11.system-requirements]
 cuda = "11.0"
@@ -67,6 +67,8 @@ cuda-version = { version = "12.8.*", channel = "nvidia" }
 cuda = { version = "12.8.*", channel = "nvidia" }
 pytorch-gpu = ">=2.7.0"
 cuda-nvrtc = ">=12.8.93,<13"
+gxx = ">=13,<13.3"
+gcc = ">=13,<13.3"
 
 [tool.pixi.feature.cu12.pypi-dependencies]
 cuequivariance-ops-torch-cu12 = ">=0.8.0"
@@ -80,6 +82,8 @@ cuda = { version = "13.*", channel = "nvidia" }
 pytorch-gpu = ">=2.7.0"
 cuda-nvrtc = ">=13.0,<14"
 cuda-nvcc = { version = ">=13.0", channel = "nvidia" }
+gxx = ">=15,<16"
+gcc = ">=15,<16"
 
 [tool.pixi.feature.cu13.pypi-dependencies]
 cuequivariance-ops-torch-cu13 = ">=0.8.0"
