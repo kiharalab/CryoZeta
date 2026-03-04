@@ -51,6 +51,8 @@ boost = ">=1.82"
 libboost-devel = ">=1.82"
 eigen = "3.4.*"
 cutlass = "*"
+gxx = ">=13,<14"
+gcc = ">=13,<14"
 
 [tool.pixi.feature.cu11.dependencies]
 cuda-version = "11.8.*"
