@@ -337,8 +337,10 @@ class SampleDictToFeatures:
 
         feature_dict["sequences"] = self.single_sample_dict["sequences"]
         n_supportpoints = feature_dict["restype"].shape[0]
+        if n_supportpoints > 1500:
+            n_supportpoints = 1500
         # n_supportpoints = int(n_supportpoints * 0.9)
-        n_supportpoints = -1
+        # n_supportpoints = -1
 
         name = self.single_sample_dict["name"]
         em = parse_mrc(
