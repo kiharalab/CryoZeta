@@ -239,7 +239,7 @@ def run_memory_profile(model, data, configs, device, output_dir, record_history=
     # ── Export stacks (for flamegraph, requires with_stack) ─────────────
     if record_history:
         stacks_path = os.path.join(output_dir, "memory_stacks.txt")
-        prof.export_stacks(stacks_path, "self_cuda_memory_usage")
+        prof.export_stacks(stacks_path, "self_device_memory_usage")
         logger.info(f"Memory stacks saved to {stacks_path}")
         logger.info("  -> Use with flamegraph.pl to generate SVG flamegraph")
 
@@ -257,13 +257,13 @@ def run_memory_profile(model, data, configs, device, output_dir, record_history=
         if "." in evt.key and not evt.key.startswith("aten::"):
             module_events.append(evt)
     # Sort by self CUDA memory descending
-    module_events.sort(key=lambda e: e.self_cuda_memory_usage, reverse=True)
+    module_events.sort(key=lambda e: e.self_device_memory_usage, reverse=True)
     if module_events:
         print(f"  {'Module':<70s} {'Self CUDA Mem':>14s} {'CUDA Mem':>14s} {'CUDA Time':>14s}")
         print(f"  {'-'*70} {'-'*14} {'-'*14} {'-'*14}")
         for evt in module_events[:40]:
-            self_mem = evt.self_cuda_memory_usage / (1024**2)
-            total_mem = evt.cuda_memory_usage / (1024**2)
+            self_mem = evt.self_device_memory_usage / (1024**2)
+            total_mem = evt.device_memory_usage / (1024**2)
             cuda_time = evt.self_cuda_time_total / 1000  # ms
             print(f"  {evt.key:<70s} {self_mem:>11.1f} MB {total_mem:>11.1f} MB {cuda_time:>11.1f} ms")
     else:
@@ -271,22 +271,22 @@ def run_memory_profile(model, data, configs, device, output_dir, record_history=
 
     # Top ops by CUDA memory usage
     print(f"\n{sep}")
-    print("TOP 30 OPERATORS BY CUDA MEMORY (self_cuda_memory_usage)")
+    print("TOP 30 OPERATORS BY CUDA MEMORY (self_device_memory_usage)")
     print(sep)
     print(
         prof.key_averages().table(
-            sort_by="self_cuda_memory_usage",
+            sort_by="self_device_memory_usage",
             row_limit=30,
         )
     )
 
     # Top ops by total CUDA memory
     print(f"\n{sep}")
-    print("TOP 30 OPERATORS BY TOTAL CUDA MEMORY (cuda_memory_usage)")
+    print("TOP 30 OPERATORS BY TOTAL CUDA MEMORY (device_memory_usage)")
     print(sep)
     print(
         prof.key_averages().table(
-            sort_by="cuda_memory_usage",
+            sort_by="device_memory_usage",
             row_limit=30,
         )
     )
@@ -298,7 +298,7 @@ def run_memory_profile(model, data, configs, device, output_dir, record_history=
         print(sep)
         print(
             prof.key_averages(group_by_stack_n=5).table(
-                sort_by="self_cuda_memory_usage",
+                sort_by="self_device_memory_usage",
                 row_limit=20,
             )
         )
