@@ -456,6 +456,25 @@ class CryoZeta(nn.Module):
             tuple[dict[str, torch.Tensor], dict[str, Any], dict[str, Any]]: Prediction, log, and time dictionaries.
         """
         step_st = time.time()
+
+        # If a previous sample raised an exception after _offload_trunk() was called (e.g.
+        # OOM in the confidence head), the trunk modules may still be on CPU.  Reload them
+        # here before touching any of them to avoid a device-mismatch crash.
+        try:
+            _trunk_device = next(self.input_embedder.parameters()).device
+        except StopIteration:
+            _trunk_device = None
+        if _trunk_device is not None and _trunk_device.type == "cpu":
+            logger.warning(
+                "Trunk modules are on CPU (likely from a previous OOM); reloading to GPU."
+            )
+            _gpu = torch.device("cuda")
+            self._reload_trunk(_gpu)
+            self.diffusion_module.to(_gpu)
+            self.distogram_head.to(_gpu)
+            self.point_residue_head.to(_gpu)
+            self.point_noise_head.to(_gpu)
+
         N_token = input_feature_dict["residue_index"].shape[-1]
         if N_token <= 16:
             deepspeed_evo_attention_condition_satisfy = False
