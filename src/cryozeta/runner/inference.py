@@ -192,7 +192,7 @@ def main(configs: Any) -> None:
 
     # Data
     logger.info(f"Loading data from\n{configs.input_json_path}")
-    dataloader = get_inference_dataloader(configs=configs)
+    dataloader = get_inference_dataloader(configs=configs, skip_names=skip_interp_names)
 
     num_data = len(dataloader.dataset)
     for seed in configs.seeds:
@@ -200,20 +200,23 @@ def main(configs: Any) -> None:
         for batch in dataloader:
             try:
                 data, atom_array, data_error_message = batch[0]
+                
+                sample_name = data.get("sample_name")
+                
+                # Skip if featurization was skipped (no input features)
+                if "input_feature_dict" not in data:
+                    logger.info(
+                        f"[Rank {DIST_WRAPPER.rank}] {sample_name}: skipping "
+                        "CryoZeta-Interpolate (no interpolation features)"
+                    )
+                    continue
+                
                 data["input_feature_dict"]["atom_array"] = atom_array
                 data["input_feature_dict"]["entity_poly_type"] = data[
                     "entity_poly_type"
                 ]
 
                 sample_name = data["sample_name"]
-
-                # Skip entries that lack interpolation features
-                if sample_name in skip_interp_names:
-                    logger.info(
-                        f"[Rank {DIST_WRAPPER.rank}] {sample_name}: skipping "
-                        "CryoZeta-Interpolate (no interpolation features)"
-                    )
-                    continue
 
                 # Per-entry stage directory: {dump_dir}/{name}/{stage_name}
                 entry_stage_dir = opjoin(

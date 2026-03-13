@@ -612,6 +612,8 @@ class CryoZeta(nn.Module):
                     contour_level=input_feature_dict.get("contour_level", None),
                 )
             )
+            if coordinate_svd_08 is None:
+                logger.info("FitModelPoints (0.8 threshold) returned None")
             coordinate_svd_04, recall_score_svd_04, ccc_mask_svd_04, ccc_box_svd_04 = (
                 FitModelPoints(
                     pred_dict["point_residue_logits"],
@@ -628,6 +630,8 @@ class CryoZeta(nn.Module):
                     contour_level=input_feature_dict.get("contour_level", None),
                 )
             )
+            if coordinate_svd_04 is None:
+                logger.info("FitModelPoints (0.4 threshold) returned None")
             coordinate_teaser, recall_score_teaser, ccc_mask_teaser, ccc_box_teaser = (
                 FitModelPointsTeaser(
                     ca_coordinate,
@@ -639,6 +643,8 @@ class CryoZeta(nn.Module):
                     contour_level=input_feature_dict.get("contour_level", None),
                 )
             )
+            if coordinate_teaser is None:
+                logger.info("FitModelPointsTeaser returned None")
         pred_dict["coordinate_svd_0.8"] = coordinate_svd_08
         pred_dict["coordinate_svd_0.4"] = coordinate_svd_04
         pred_dict["coordinate_teaser"] = coordinate_teaser
@@ -665,26 +671,39 @@ class CryoZeta(nn.Module):
             + sum(recall_score_teaser)
             > 0
         ):
-            # sort the total_score by descending order and make the coordinates the same order
-            combined_scores = (
-                total_score_svd_08 + total_score_svd_04 + total_score_teaser
-            )
+            # Build combined scores and method tracking, excluding methods that returned None
+            combined_scores = []
+            score_method_indices = []  # (method_id, sample_idx)
+            
+            if coordinate_svd_08 is not None:
+                for i in range(N_sample):
+                    combined_scores.append(total_score_svd_08[i])
+                    score_method_indices.append((0, i))
+            
+            if coordinate_svd_04 is not None:
+                for i in range(N_sample):
+                    combined_scores.append(total_score_svd_04[i])
+                    score_method_indices.append((1, i))
+            
+            if coordinate_teaser is not None:
+                for i in range(N_sample):
+                    combined_scores.append(total_score_teaser[i])
+                    score_method_indices.append((2, i))
+            
+            # Sort all scores and select top N_sample
             sorted_indices = sorted(
                 range(len(combined_scores)),
                 key=lambda idx: combined_scores[idx],
                 reverse=True,
             )
             for i in range(N_sample):
-                if sorted_indices[i] < N_sample:
-                    coordinate_superimposed[i] = coordinate_svd_08[sorted_indices[i]]
-                elif sorted_indices[i] < N_sample * 2:
-                    coordinate_superimposed[i] = coordinate_svd_04[
-                        sorted_indices[i] - N_sample
-                    ]
-                elif sorted_indices[i] < N_sample * 3:
-                    coordinate_superimposed[i] = coordinate_teaser[
-                        sorted_indices[i] - N_sample * 2
-                    ]
+                method_id, sample_idx = score_method_indices[sorted_indices[i]]
+                if method_id == 0:
+                    coordinate_superimposed[i] = coordinate_svd_08[sample_idx]
+                elif method_id == 1:
+                    coordinate_superimposed[i] = coordinate_svd_04[sample_idx]
+                elif method_id == 2:
+                    coordinate_superimposed[i] = coordinate_teaser[sample_idx]
         else:
             try:
                 (

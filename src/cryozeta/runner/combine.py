@@ -55,36 +55,42 @@ def main(
         scores_path = f"{cryozeta_dir}/saved_data/scores.csv"
         scores_interp_path = f"{interpolate_dir}/saved_data/scores.csv"
 
-        if not os.path.exists(scores_path) or not os.path.exists(scores_interp_path):
+        has_cryozeta = os.path.exists(scores_path)
+        has_interpolate = os.path.exists(scores_interp_path)
+
+        # Skip only if neither file exists
+        if not has_cryozeta and not has_interpolate:
             typer.echo(
-                f"Skipping {pdb_id}: scores.csv not found in one or both model directories"
+                f"Skipping {pdb_id}: scores.csv not found in either model directory"
             )
             continue
 
-        df_scores = pd.read_csv(scores_path)
-        df_scores_interpolation = pd.read_csv(scores_interp_path)
+        df_scores = pd.read_csv(scores_path) if has_cryozeta else pd.DataFrame()
+        df_scores_interpolation = pd.read_csv(scores_interp_path) if has_interpolate else pd.DataFrame()
 
         results = []
-        for _index, row in df_scores.iterrows():
-            if row["pdb_id"] == pdb_id:
-                results.append(
-                    (
-                        row["sample_idx"],
-                        row["method"],
-                        row["recall_ccmask_ca"],
-                        "model1",
+        if has_cryozeta:
+            for _index, row in df_scores.iterrows():
+                if row["pdb_id"] == pdb_id:
+                    results.append(
+                        (
+                            row["sample_idx"],
+                            row["method"],
+                            row["recall_ccmask_ca"],
+                            "model1",
+                        )
                     )
-                )
-        for _index, row in df_scores_interpolation.iterrows():
-            if row["pdb_id"] == pdb_id:
-                results.append(
-                    (
-                        row["sample_idx"],
-                        row["method"],
-                        row["recall_ccmask_ca"],
-                        "model_interpolation",
+        if has_interpolate:
+            for _index, row in df_scores_interpolation.iterrows():
+                if row["pdb_id"] == pdb_id:
+                    results.append(
+                        (
+                            row["sample_idx"],
+                            row["method"],
+                            row["recall_ccmask_ca"],
+                            "model_interpolation",
+                        )
                     )
-                )
         if len(results) == 0:
             continue
         results = sorted(results, key=lambda x: x[2], reverse=True)
