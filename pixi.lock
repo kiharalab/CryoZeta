@@ -9,7 +9,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -336,7 +335,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -810,7 +808,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -1280,7 +1277,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -1752,7 +1748,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -2081,7 +2076,6 @@ environments:
     - https://pypi.org/simple
     options:
       channel-priority: disabled
-      pypi-prerelease-mode: if-necessary-or-explicit
     packages:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
@@ -2985,6 +2979,7 @@ packages:
   version: 0.1.0
   sha256: 86b84805c60cd7cb6d5cdf4e3266e07c8b790d6a35591462354094f32e3d7c80
   requires_python: '>=3.12,<3.13'
+  editable: true
 - pypi: https://files.pythonhosted.org/packages/6b/e7/237155ae19a9023de7e30ec64e5d99a9431a567407ac21170a046d22a5a3/cryptography-46.0.5-cp311-abi3-manylinux_2_28_x86_64.whl
   name: cryptography
   version: 46.0.5
