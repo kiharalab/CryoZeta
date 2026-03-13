@@ -34,22 +34,26 @@ from cryozeta.utils.torch_utils import dict_to_tensor
 warnings.filterwarnings("ignore", module="biotite")
 
 
-def get_inference_dataloader(configs: Any) -> DataLoader:
+def get_inference_dataloader(configs: Any, skip_names: set[str] | None = None) -> DataLoader:
     """
     Creates and returns a DataLoader for inference using the InferenceDataset.
 
     Args:
         configs: A configuration object containing the necessary parameters for the DataLoader.
+        skip_names: Optional set of sample names to skip during featurization.
 
     Returns:
         A DataLoader object configured for inference.
     """
+    if skip_names is None:
+        skip_names = set()
     inference_dataset = InferenceDataset(
         input_json_path=configs.input_json_path,
         dump_dir=configs.dump_dir,
         use_msa=configs.use_msa,
         enable_rna_msa=configs.enable_rna_msa,
         em_file_dir=configs.em_file_dir,
+        skip_names=skip_names,
     )
     sampler = DistributedSampler(
         dataset=inference_dataset,
@@ -75,12 +79,14 @@ class InferenceDataset(Dataset):
         use_msa: bool = True,
         enable_rna_msa: bool = True,
         em_file_dir: str = "",
+        skip_names: set[str] | None = None,
     ) -> None:
         self.input_json_path = input_json_path
         self.dump_dir = dump_dir
         self.use_msa = use_msa
         self.enable_rna_msa = enable_rna_msa
         self.em_file_dir = em_file_dir
+        self.skip_names = skip_names if skip_names is not None else set()
         with open(self.input_json_path) as f:
             self.inputs = json.load(f)
 
@@ -212,12 +218,18 @@ class InferenceDataset(Dataset):
         try:
             single_sample_dict = self.inputs[index]
             sample_name = single_sample_dict["name"]
-            logger.info(f"Featurizing {sample_name}...")
-
-            data, atom_array, _ = self.process_one(
-                single_sample_dict=single_sample_dict
-            )
-            error_message = ""
+            
+            # Skip featurization for entries in skip list
+            if sample_name in self.skip_names:
+                logger.info(f"Skipping featurization for {sample_name} (in skip list)")
+                data, atom_array = {}, None
+                error_message = ""
+            else:
+                logger.info(f"Featurizing {sample_name}...")
+                data, atom_array, _ = self.process_one(
+                    single_sample_dict=single_sample_dict
+                )
+                error_message = ""
         except Exception as e:
             data, atom_array = {}, None
             error_message = f"{e}:\n{traceback.format_exc()}"
