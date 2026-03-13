@@ -60,6 +60,10 @@ class InferenceRunner:
         if self.use_cuda:
             self.device = torch.device(f"cuda:{DIST_WRAPPER.local_rank}")
             os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+            # Reduce memory fragmentation; helps avoid OOM when reserved-but-unallocated
+            # memory is large (PyTorch recommendation).
+            if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
             all_gpu_ids = ",".join(str(x) for x in range(torch.cuda.device_count()))
             devices = os.getenv("CUDA_VISIBLE_DEVICES", all_gpu_ids)
             logger.info(
