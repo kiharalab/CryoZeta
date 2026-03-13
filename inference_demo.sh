@@ -128,6 +128,14 @@ fi
 
 export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
+
+# Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
+CONDA_PREFIX="$(pwd)/.pixi/envs/${PIXI_ENV}"
+if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
+    export TRITON_PTXAS_PATH="${CONDA_PREFIX}/bin/ptxas"
+    export TRITON_PTXAS_BLACKWELL_PATH="${CONDA_PREFIX}/bin/ptxas"
+fi
 
 # Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
 # finds the pixi-managed nvcc (and matching host-compiler compatibility)
@@ -141,6 +149,11 @@ N_step=20
 N_cycle=10
 seed=101
 use_deepspeed_evo_attention=true
+use_cuequivariance=true  # Master toggle for all cuEquivariance modules
+use_cuequivariance_attention=${use_cuequivariance}
+use_cuequivariance_multiplicative_update=${use_cuequivariance}
+use_cuequivariance_attention_pair_bias=${use_cuequivariance}
+use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 mode="combined"  # cryozeta, cryozeta-interpolate, or combined
 overwrite=false   # set to true to re-run even if output already exists
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
@@ -181,6 +194,10 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --dump_dir ${dump_dir} \
     --input_json_path ${input_json_path} \
     --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
+    --use_cuequivariance_attention ${use_cuequivariance_attention} \
+    --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
+    --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+    --use_opm_tilelang ${use_opm_tilelang} \
     --model.N_cycle ${N_cycle} \
     --sample_diffusion.N_sample ${N_sample} \
     --sample_diffusion.N_step ${N_step} \
@@ -198,6 +215,10 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --em_file_dir ${dump_dir} \
     --input_json_path ${input_json_path} \
     --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
+    --use_cuequivariance_attention ${use_cuequivariance_attention} \
+    --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
+    --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
+    --use_opm_tilelang ${use_opm_tilelang} \
     --model.N_cycle ${N_cycle} \
     --sample_diffusion.N_sample ${N_sample} \
     --sample_diffusion.N_step ${N_step} \

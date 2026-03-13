@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from functools import partial
 
 import torch
@@ -21,6 +22,13 @@ import torch.nn as nn
 from cryozeta.openfold_local.model.primitives import Linear
 from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
+from cryozeta.model.modules.opm_tilelang import opm_chunked
+
+try:
+    from cryozeta.model.modules.opm_tilelang import opm_tilelang
+    _tilelang_available = True
+except (ImportError, OSError, RuntimeError):
+    _tilelang_available = False
 
 
 class OuterProductMean(nn.Module):
@@ -28,7 +36,7 @@ class OuterProductMean(nn.Module):
     Implements Algorithm 10.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, eps=1e-3):
+    def __init__(self, c_m, c_z, c_hidden, eps=1e-3, use_tilelang=False):
         """
         Args:
             c_m:
@@ -44,6 +52,7 @@ class OuterProductMean(nn.Module):
         self.c_z = c_z
         self.c_hidden = c_hidden
         self.eps = eps
+        self.use_tilelang = use_tilelang and _tilelang_available
 
         self.layer_norm = nn.LayerNorm(c_m)
         self.linear_1 = Linear(c_m, c_hidden)
@@ -121,24 +130,30 @@ class OuterProductMean(nn.Module):
 
         del ln
 
-        a = a.transpose(-2, -3)
-        b = b.transpose(-2, -3)
+        # Transpose to [*, N_res, N_seq, C]
+        a = a.transpose(-2, -3).contiguous()
+        b = b.transpose(-2, -3).contiguous()
 
+        # Norm: [*, N_res, N_res]
+        norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
+        norm = (norm + self.eps).squeeze(-1)
+
+        if self.use_tilelang:
+            return opm_tilelang(
+                a, b, self.linear_out.weight, self.linear_out.bias, norm
+            )
+
+        if os.environ.get("USE_OPM_CHUNKED", "1") == "1":
+            return opm_chunked(
+                a, b, self.linear_out.weight, self.linear_out.bias, norm
+            )
+
+        # Original einsum path
         if chunk_size is not None:
             outer = self._chunk(a, b, chunk_size)
         else:
             outer = self._opm(a, b)
-
-        # [*, N_res, N_res, 1]
-        norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
-        norm = norm + self.eps
-
-        # [*, N_res, N_res, C_z]
-        if inplace_safe:
-            outer /= norm
-        else:
-            outer = outer / norm
-
+        outer = outer / norm.unsqueeze(-1)
         return outer
 
     def forward(

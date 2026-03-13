@@ -98,6 +98,7 @@ def sample_diffusion(
     diffusion_chunk_size: int | None = None,
     inplace_safe: bool = False,
     attn_chunk_size: int | None = None,
+    use_cuequivariance_attention_pair_bias: bool = False,
 ) -> torch.Tensor:
     """Implements Algorithm 18 in AF3.
     It performances denoising steps from time 0 to time T.
@@ -131,6 +132,15 @@ def sample_diffusion(
     batch_shape = s_inputs.shape[:-2]
     device = s_inputs.device
     dtype = s_inputs.dtype
+
+    # Pre-compute pair conditioning once (invariant across all denoising steps).
+    # This avoids recomputing the [N_token, N_token, 2*c_z] cat + projection
+    # 200 times, saving ~2GB peak VRAM per step at N=2000.
+    cached_pair_z = denoise_net.compute_pair_conditioning(
+        z_trunk=z_trunk,
+        input_feature_dict=input_feature_dict,
+        inplace_safe=inplace_safe,
+    )
 
     def _chunk_sample_diffusion(chunk_n_sample, inplace_safe):
         # init noise
@@ -183,6 +193,8 @@ def sample_diffusion(
                 z_trunk=z_trunk,
                 chunk_size=attn_chunk_size,
                 inplace_safe=inplace_safe,
+                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
+                cached_pair_z=cached_pair_z,
             )
 
             delta = (x_noisy - x_denoised) / t_hat[

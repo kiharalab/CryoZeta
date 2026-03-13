@@ -101,3 +101,13 @@ unset _TEASER_BUILD_PY
 
 # CUTLASS headers (provided by the pixi conda package)
 export CUTLASS_PATH="${CONDA_PREFIX}"
+
+# Add Conda lib to LD_LIBRARY_PATH for TVM/CUDA to find libnvrtc
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+
+# Triton needs ptxas on PATH and Blackwell-capable ptxas for sm_100+ GPUs
+if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
+    export TRITON_PTXAS_PATH="${CONDA_PREFIX}/bin/ptxas"
+    # CUDA 13+ ptxas supports Blackwell; set both paths
+    export TRITON_PTXAS_BLACKWELL_PATH="${CONDA_PREFIX}/bin/ptxas"
+fi

@@ -400,6 +400,8 @@ class PairUpdate(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
+        use_cuequivariance_multiplicative_update: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -422,7 +424,8 @@ class PairUpdate(nn.Module):
             _attn_chunk_size = chunk_size
 
         tri_multi_update = self.tri_multi_out(
-            z, pair_mask, inplace_safe=inplace_safe, _add_with_inplace=True
+            z, pair_mask, inplace_safe=inplace_safe, _add_with_inplace=True,
+            use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
         )
         if not inplace_safe:
             z = z + self.pair_dropout_row(tri_multi_update)
@@ -436,6 +439,7 @@ class PairUpdate(nn.Module):
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
+            use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
         )
         if not inplace_safe:
             z = z + self.pair_dropout_row(tri_multi_update)
@@ -453,6 +457,7 @@ class PairUpdate(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -474,6 +479,7 @@ class PairUpdate(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
