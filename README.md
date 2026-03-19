@@ -15,6 +15,12 @@ CryoZeta is a de novo macromolecular structure modeling tool that integrates cry
 Kihara Lab website: https://kiharalab.org/
 Kihara Lab EM server: https://em.kiharalab.org/algorithm/CryoZeta
 
+## Latest Updates
+
+- **2026-03-09: Memory Optimization** 
+  - Optimize CUDA memory allocation
+  - Supported up to ~2,800 residues/nucleotides with ~2,000 support points.
+    
 ## Setup
 
 Estimated time: < 15 minutes
