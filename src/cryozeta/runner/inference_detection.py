@@ -442,13 +442,23 @@ class CryoEMInference:
         t1 = time.time()
         logger.info(f"Start inference for {emdb_id}")
 
+        amp_dtype = torch.bfloat16
+        if self.device.type == "cuda":
+            major_cc, _ = torch.cuda.get_device_capability(self.device)
+            if major_cc >= 12:
+                amp_dtype = torch.float16
+                logger.warning(
+                    "Using float16 autocast on compute capability >= 12 to avoid "
+                    "known bfloat16 cuBLASLt heuristic failures on some CUDA 13 stacks"
+                )
+
         with torch.autocast(
             device_type="cuda",
-            dtype=torch.bfloat16,
+            dtype=amp_dtype,
             enabled=(self.device.type == "cuda"),
         ):
             # Move input to device
-            emap = emap.to(self.device, dtype=torch.bfloat16)  # (1, 1, D, H, W)
+            emap = emap.to(self.device, dtype=amp_dtype)  # (1, 1, D, H, W)
             spatial_mask = (emap > 0.0).squeeze(0).squeeze(0).cpu()  # (D, H, W)
 
             detection_output = sliding_window_inference(

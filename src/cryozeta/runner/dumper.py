@@ -42,16 +42,28 @@ def get_clean_full_confidence(full_confidence_dict: dict) -> dict:
     return full_confidence_dict
 
 
+_COORD_TYPE_MAP = {
+    "coordinate": None,
+    "coordinate_teaser": "teaser",
+    "coordinate_svd_0.8": "svd",
+    "coordinate_vesper": "vesper",
+}
+
+
 class DataDumper:
     def __init__(
         self,
         base_dir: str,
         stage_name: str = "",
         need_atom_confidence: bool = False,
+        atom_arrays_dir: str | None = None,
     ):
         self.base_dir = base_dir
         self.stage_name = stage_name
         self.need_atom_confidence = need_atom_confidence
+        self.atom_arrays_dir = atom_arrays_dir
+        if self.atom_arrays_dir:
+            os.makedirs(self.atom_arrays_dir, exist_ok=True)
 
     def dump(
         self,
@@ -65,13 +77,6 @@ class DataDumper:
         Dump the predictions and related data to the specified directory.
 
         Output is organized as ``{base_dir}/{pdb_id}/{stage_name}/seed_{seed}/``.
-
-        Args:
-            pdb_id (str): The PDB ID / sample name of the entry.
-            seed (int): The seed used for randomization.
-            pred_dict (dict): The dictionary containing the predictions.
-            atom_array (AtomArray): The AtomArray object containing the structure data.
-            entity_poly_type (dict[str, str]): The entity poly type information.
         """
         dump_dir = self._get_dump_dir(pdb_id, seed)
         Path(dump_dir).mkdir(parents=True, exist_ok=True)
@@ -80,6 +85,7 @@ class DataDumper:
             pred_dict=pred_dict,
             dump_dir=dump_dir,
             pdb_id=pdb_id,
+            seed=seed,
             atom_array=atom_array,
             entity_poly_type=entity_poly_type,
         )
@@ -100,6 +106,7 @@ class DataDumper:
         pred_dict: dict,
         dump_dir: str,
         pdb_id: str,
+        seed: int,
         atom_array: AtomArray,
         entity_poly_type: dict[str, str],
     ):
@@ -108,6 +115,13 @@ class DataDumper:
             structure: Save the predicted coordinates as CIF files.
             confidence: Save the confidence data as JSON files.
         """
+        # Compute sorted indices by ranking_score (descending) so sample_0 = best
+        N_sample = len(pred_dict["summary_confidence"])
+        sorted_indices = sorted(
+            range(N_sample),
+            key=lambda i: pred_dict["summary_confidence"][i]["ranking_score"],
+            reverse=True,
+        )
 
         for result in [
             "coordinate",
@@ -126,15 +140,18 @@ class DataDumper:
                     pred_coordinates=pred_dict[result],
                     prediction_save_dir=prediction_save_dir,
                     sample_name=pdb_id,
+                    seed=seed,
                     atom_array=atom_array,
                     entity_poly_type=entity_poly_type,
+                    sorted_indices=sorted_indices,
+                    coord_type=_COORD_TYPE_MAP.get(result),
                 )
             if result == "coordinate":
-                # Dump confidence
                 self._save_confidence(
                     data=pred_dict,
                     prediction_save_dir=prediction_save_dir,
                     sample_name=pdb_id,
+                    sorted_indices=sorted_indices,
                 )
 
     def _save_structure(
@@ -142,14 +159,31 @@ class DataDumper:
         pred_coordinates: torch.Tensor,
         prediction_save_dir: str,
         sample_name: str,
+        seed: int,
         atom_array: AtomArray,
         entity_poly_type: dict[str, str],
+        sorted_indices: list[int] | None = None,
+        coord_type: str | None = None,
     ):
         assert atom_array is not None
         N_sample = pred_coordinates.shape[0]
-        for idx in range(N_sample):
+
+        if self.atom_arrays_dir:
+            npz_dir = self.atom_arrays_dir
+            npz_prefix = f"{sample_name}_seed_{seed}"
+        else:
+            npz_dir = os.path.join(prediction_save_dir, "atom_arrays")
+            os.makedirs(npz_dir, exist_ok=True)
+            npz_prefix = sample_name
+
+        if sorted_indices is None:
+            sorted_indices = list(range(N_sample))
+
+        suffix = f"_{coord_type}" if coord_type else ""
+
+        for rank, idx in enumerate(sorted_indices):
             output_fpath = os.path.join(
-                prediction_save_dir, f"{sample_name}_sample_{idx}.cif"
+                prediction_save_dir, f"{sample_name}_sample_{rank}.cif"
             )
             save_structure_cif(
                 atom_array=atom_array,
@@ -157,6 +191,9 @@ class DataDumper:
                 output_fpath=output_fpath,
                 entity_poly_type=entity_poly_type,
                 pdb_id=sample_name,
+                pred_atom_array_npz_path=os.path.join(
+                    npz_dir, f"{npz_prefix}_sample_{rank}{suffix}.npz"
+                ),
             )
 
     def _save_confidence(
@@ -164,7 +201,7 @@ class DataDumper:
         data: dict,
         prediction_save_dir: str,
         sample_name: str,
-        sorted_by_ranking_score: bool = True,
+        sorted_indices: list[int] | None = None,
     ):
         N_sample = len(data["summary_confidence"])
         for idx in range(N_sample):
@@ -172,13 +209,9 @@ class DataDumper:
                 data["full_data"][idx] = get_clean_full_confidence(
                     data["full_data"][idx]
                 )
-        sorted_indices = range(N_sample)
-        if sorted_by_ranking_score:
-            sorted_indices = sorted(
-                range(N_sample),
-                key=lambda i: data["summary_confidence"][i]["ranking_score"],
-                reverse=True,
-            )
+
+        if sorted_indices is None:
+            sorted_indices = list(range(N_sample))
 
         for rank, idx in enumerate(sorted_indices):
             output_fpath = os.path.join(

@@ -158,10 +158,8 @@ mode="combined"  # cryozeta, cryozeta-interpolate, or combined
 overwrite=false   # set to true to re-run even if output already exists
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
-# input_json_path="examples/example.json"
-# dump_dir="output/example"
-input_json_path="/home/zhan1797/scratch/CryoZeta_server/CryoZeta/examples/test_server/case3/input.json"
-dump_dir="/home/zhan1797/scratch/CryoZeta_server/CryoZeta/examples/test_server/case4"
+input_json_path="assets/examples/example.json"
+dump_dir="output/example"
 
 # ── GPU configuration ────────────────────────────────────────────────────────
 # CLI flag overrides the default; use -g/--gpu to set from command line.

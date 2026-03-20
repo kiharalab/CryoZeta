@@ -55,7 +55,7 @@ use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 use_opm_tilelang=false
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
-input_json_path="examples/example.json"
+input_json_path="assets/examples/example.json"
 
 OUTPUT_DIR=output/memory_profile_run
 

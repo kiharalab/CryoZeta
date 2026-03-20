@@ -19,6 +19,8 @@ dependencies = ["pytest>=9.0.2,<10"]
 cryozeta-detection = "cryozeta.runner.inference_detection:app"
 cryozeta-inference = "cryozeta.runner.inference:cli"
 cryozeta-combine = "cryozeta.runner.combine:app"
+cryozeta-cycle-predict = "cryozeta.runner.cycle_predict:main"
+cryozeta-combine-stages = "cryozeta.runner.combine_stages:main"
 
 [tool.pixi.workspace]
 channels = ["nvidia", "pytorch", "conda-forge"]
@@ -33,10 +35,10 @@ repository = "https://github.com/kiharalab/CryoZeta"
 scripts = ["env_setup.sh"]
 
 [tool.pixi.tasks]
-download-weights = "python -c \"from huggingface_hub import snapshot_download; snapshot_download('KiharaLab/CryoZeta', repo_type='model', local_dir='assets')\""
+download-assets = "python -c \"from huggingface_hub import snapshot_download; snapshot_download('KiharaLab/CryoZeta', repo_type='model', local_dir='assets')\""
 clone-teaser = "test -d externals/TEASER-plusplus || (mkdir -p externals && git clone --depth 1 https://github.com/MIT-SPARK/TEASER-plusplus.git externals/TEASER-plusplus)"
 build-teaser = { cmd = "test -f externals/TEASER-plusplus/build/libteaser.so || (cmake -S externals/TEASER-plusplus -B externals/TEASER-plusplus/build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF && cmake --build externals/TEASER-plusplus/build -j$(nproc))", depends-on = ["clone-teaser"] }
-setup = { cmd = "sh -c 'echo \"==> Detected PIXI_ENV: $PIXI_ENV\" && if [ \"$PIXI_ENV\" != \"default\" ]; then echo \"==> Installing environment: $PIXI_ENV\" && pixi install -e \"$PIXI_ENV\"; fi && echo \"==> Setup complete!\"'", depends-on = ["download-weights", "build-teaser"] }
+setup = { cmd = "sh -c 'echo \"==> Detected PIXI_ENV: $PIXI_ENV\" && if [ \"$PIXI_ENV\" != \"default\" ]; then echo \"==> Installing environment: $PIXI_ENV\" && pixi install -e \"$PIXI_ENV\"; fi && echo \"==> Setup complete!\"'", depends-on = ["download-assets", "build-teaser"] }
 
 
 [tool.pixi.system-requirements]

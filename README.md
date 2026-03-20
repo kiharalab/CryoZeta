@@ -50,8 +50,14 @@ The setup command automatically:
 
 1. Installs all dependencies (Python, CUDA, C++ libraries, etc.).
 2. Detects your GPU and selects the matching CUDA version (11, 12, or 13).
-3. Downloads CryoZeta model weights from Hugging Face.
+3. Downloads CryoZeta assets (weights + examples) from Hugging Face.
 4. Clones and builds [TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus).
+
+If you need to download assets separately, run the `download-assets` task defined in `pyproject.toml`:
+
+```bash
+pixi run download-assets
+```
 
 ### CUDA Environment Selection
 
@@ -98,7 +104,7 @@ without entering a shell:
 
 ```bash
 # Run a single command in the CUDA 11 environment
-pixi run -e cu11 cryozeta-detection json-run examples/example.json output/example --device cuda
+pixi run -e cu11 cryozeta-detection json-run assets/examples/example.json output/example --device cuda
 
 # Install a specific environment
 pixi install -e cu11
@@ -123,12 +129,28 @@ Available environments:
 sh inference_demo.sh
 ```
 
-This runs the full CryoZeta pipeline on the bundled example (`examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU and driver.
+This runs the full CryoZeta pipeline on the bundled example (`assets/examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU and driver.
+
+### Large Structure Inference
+
+Use `large_inference_demo.sh` for large-complex cycle prediction with stage-wise EM filtering:
+
+```bash
+sh large_inference_demo.sh --example 0
+```
+
+`--example` selects exactly one entry from `assets/examples/large_examples.json` (by 0-based index or `name`):
+
+```bash
+sh large_inference_demo.sh --example 9nb5
+```
+
+This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
 
 ### Prepare Input JSON
 
 The input is a JSON file containing a list of entries. Each entry describes one
-cryo-EM target. See `examples/example.json` for a complete example.
+cryo-EM target. See `assets/examples/example.json` for a complete example.
 
 ```json
 [

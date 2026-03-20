@@ -11,7 +11,7 @@ Produces:
 Usage:
   python scripts/profile_memory.py \
       --load_checkpoint_path assets/cryozeta-v0.0.1.safetensors \
-      --input_json_path examples/example.json \
+      --input_json_path assets/examples/example.json \
       --em_file_dir output/example \
       --dump_dir output/memory_profile \
       --model.N_cycle 1 \

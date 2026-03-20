@@ -157,12 +157,54 @@ def save_atoms_to_cif(
     )
 
 
+def save_atom_array_npz(output_path: str, atom_array: AtomArray) -> None:
+    """Persist AtomArray annotations and coordinates to a compressed NPZ."""
+    np.savez_compressed(
+        output_path,
+        coord=atom_array.coord,
+        res_id=atom_array.res_id,
+        res_name=atom_array.res_name,
+        atom_name=atom_array.atom_name,
+        element=atom_array.element,
+        label_asym_id=getattr(atom_array, "label_asym_id", None),
+        auth_asym_id=getattr(atom_array, "auth_asym_id", None),
+        chain_id=getattr(atom_array, "chain_id", None),
+        label_entity_id=getattr(atom_array, "label_entity_id", None),
+        hetero=getattr(atom_array, "hetero", None),
+        is_resolved=getattr(atom_array, "is_resolved", None),
+    )
+
+
+def load_atom_array_npz(input_path: str) -> AtomArray:
+    """Reconstruct a Biotite AtomArray from a NPZ saved by save_atom_array_npz."""
+    data = np.load(input_path, allow_pickle=True)
+    n = data["coord"].shape[0]
+    arr = AtomArray(n)
+    arr.coord = data["coord"]
+    for key in [
+        "res_id",
+        "res_name",
+        "atom_name",
+        "element",
+        "label_asym_id",
+        "auth_asym_id",
+        "chain_id",
+        "label_entity_id",
+        "hetero",
+        "is_resolved",
+    ]:
+        if key in data and data[key] is not None:
+            setattr(arr, key, data[key])
+    return arr
+
+
 def save_structure_cif(
     atom_array: AtomArray,
     pred_coordinate: torch.Tensor,
     output_fpath: str,
     entity_poly_type: dict[str, str],
     pdb_id: str,
+    pred_atom_array_npz_path: str | None = None,
 ):
     """
     Save the predicted structure to a CIF file.
@@ -173,10 +215,13 @@ def save_structure_cif(
         output_fpath (str): The output file path for saving the CIF file.
         entity_poly_type (dict[str, str]): The entity poly type information.
         pdb_id (str): The PDB ID for the entry.
+        pred_atom_array_npz_path: Optional path to save the predicted AtomArray as NPZ.
     """
     pred_atom_array = copy.deepcopy(atom_array)
-    pred_pose = pred_coordinate.cpu().numpy()  # pred_coordinate.cpu().detach().numpy()
+    pred_pose = pred_coordinate.cpu().numpy()
     pred_atom_array.coord = pred_pose
+    if pred_atom_array_npz_path is not None:
+        save_atom_array_npz(pred_atom_array_npz_path, pred_atom_array)
     save_atoms_to_cif(
         output_fpath,
         pred_atom_array,

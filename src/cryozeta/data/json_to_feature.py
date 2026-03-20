@@ -343,10 +343,15 @@ class SampleDictToFeatures:
         # n_supportpoints = -1
 
         name = self.single_sample_dict["name"]
+        em_file_path = self.single_sample_dict.get("em_file")
+        if em_file_path is None or not em_file_path:
+            em_file_path = (
+                f"{self.em_file_dir}/{name}/CryoZeta-Detection/{name}.pt"
+            )
         em = parse_mrc(
             None,
             n_supportpoints,
-            em_file=f"{self.em_file_dir}/{name}/CryoZeta-Detection/{name}.pt",
+            em_file=em_file_path,
         )
         feature_dict.update({**em})
         feature_dict = make_seq_mask(feature_dict)

@@ -44,7 +44,10 @@ class InferenceRunner:
         self.init_basics()
         self.init_model()
         self.load_checkpoint()
-        self.init_dumper(need_atom_confidence=configs.need_atom_confidence)
+        self.init_dumper(
+            need_atom_confidence=configs.need_atom_confidence,
+            atom_arrays_dir=getattr(configs, "atom_arrays_dir", None),
+        )
 
     def init_env(self) -> None:
         logger.info(
@@ -120,11 +123,14 @@ class InferenceRunner:
         self.model.eval()
         self.print("Finish loading checkpoint.")
 
-    def init_dumper(self, need_atom_confidence: bool = False):
+    def init_dumper(
+        self, need_atom_confidence: bool = False, atom_arrays_dir: str | None = None
+    ):
         self.dumper = DataDumper(
             base_dir=self.dump_dir,
             stage_name=self.stage_name,
             need_atom_confidence=need_atom_confidence,
+            atom_arrays_dir=atom_arrays_dir,
         )
 
     @torch.no_grad()
