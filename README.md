@@ -17,6 +17,9 @@ Kihara Lab EM server: https://em.kiharalab.org/algorithm/CryoZeta
 
 ## Latest Updates
 
+- **2026-03-20: Large Complex Inference** 
+  - For modeling large complexes (>2800 residues or nucleotides), we recommend using the large-complex inference mode.
+    
 - **2026-03-09: Memory Optimization** 
   - Optimize CUDA memory allocation
   - Supported up to ~2,800 residues/nucleotides with ~2,000 support points.
