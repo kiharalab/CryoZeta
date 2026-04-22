@@ -191,9 +191,9 @@ Every sequence object contains:
 |-------|------|-------------|
 | `sequence` | string | One-letter residue/nucleotide codes. |
 | `count` | int | Number of identical copies of this chain in the complex. |
-| `msa` | object | *(optional)* Precomputed MSA information (protein and RNA only). |
+| `msa` | object | MSA information for protein and RNA inference. DNA does not require MSA information. |
 
-The optional `msa` object has the following fields:
+The `msa` object has the following fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -201,6 +201,31 @@ The optional `msa` object has the following fields:
 | `pairing_db` | string | Pairing database name (e.g. `"uniref100"`). |
 
 > **Note:** DNA sequences do not require MSA information.
+>
+> For **protein** and **RNA** inference, the current repository expects an `msa`
+> block to be present for those chains. In practice, the most common setup is to
+> provide `precomputed_msa_dir` with pre-generated `.a3m` files.
+
+#### Preparing Your Own MSA
+
+This repository currently does **not** provide a bundled MSA-generation script.
+If you are preparing your own inputs, generate the MSA files separately and then
+set `precomputed_msa_dir` in the input JSON.
+
+Recommended external tools:
+
+- **Protein MSA:** ColabFold search script  
+  <https://github.com/sokrypton/ColabFold/blob/main/colabfold_search.sh>
+- **RNA MSA (original):** rMSA  
+  <https://github.com/pylelab/rMSA>
+- **RNA MSA (lightweight):** RoseTTAFold2NA helper script  
+  <https://github.com/uw-ipd/RoseTTAFold2NA/blob/main/input_prep/make_rna_msa.sh>
+
+Expected directory contents:
+
+- **Protein:** `precomputed_msa_dir` should contain `mmseqs_other_hits.a3m`.
+  For multimer/pairing inference, it should also contain `uniref100_hits.a3m`.
+- **RNA:** `precomputed_msa_dir` should contain `rnacentral.a3m`.
 
 ### Running Inference
 
