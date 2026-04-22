@@ -17,6 +17,12 @@ Kihara Lab EM server: https://em.kiharalab.org/algorithm/CryoZeta
 
 ## Latest Updates
 
+- **2026-04-22: Apptainer Packaging**
+  - CryoZeta is also packaged for Apptainer on Hugging Face:
+    <https://huggingface.co/KiharaLab/CryoZeta/tree/main/apptainer>
+  - The Apptainer package is already bundled as a container image; please read
+    the Apptainer README there for download and usage instructions.
+
 - **2026-03-20: Large Complex Inference** 
   - For modeling large complexes (>2800 residues or nucleotides), we recommend using the large-complex inference mode.
     
