@@ -31,20 +31,27 @@ Options:
                       SEL can be a 0-based index (e.g. 0) or entry name (e.g. 9nb5).
                       Default: 0
   -r, --registration  Registration method: auto (default), teaser, svd, vesper.
+  -i, --input-json    Input JSON file. Default: CryoZeta large example JSON.
+  -o, --output-dir    Output directory. Default: PROJECT_ROOT/output/large_examples
+  --checkpoint PATH   CryoZeta checkpoint path.
+  --detection-checkpoint PATH
+                      CryoZeta detection checkpoint path.
   -h, --help          Show this help message and exit.
 
 Environment variables (lower priority than flags):
   PIXI_ENV            Pixi environment name (set by env_setup.sh activation).
   CRYOZETA_CUDA       CUDA major version shorthand (11, 12, 13).
+  CRYOZETA_ASSETS_DIR Override the runtime assets directory.
+  PIXI_PROJECT_ROOT   Override the project root used for defaults.
 
 Examples:
-  sh large_inference_demo.sh                        # auto-detect everything
-  sh large_inference_demo.sh -e cu11 -g 1           # CUDA 11, GPU 1
-  sh large_inference_demo.sh --env 13 --gpu 2       # CUDA 13, GPU 2
-  sh large_inference_demo.sh --example 2            # run entry at index 2
-  sh large_inference_demo.sh --example 9ey0         # run entry named 9ey0
-  sh large_inference_demo.sh -r teaser              # TEASER++ registration only
-  CRYOZETA_CUDA=11 sh large_inference_demo.sh -g 1  # CUDA 11 via env var, GPU 1
+  bash large_inference_demo.sh                        # auto-detect everything
+  bash large_inference_demo.sh -e cu11 -g 1           # CUDA 11, GPU 1
+  bash large_inference_demo.sh --env 13 --gpu 2       # CUDA 13, GPU 2
+  bash large_inference_demo.sh --example 2            # run entry at index 2
+  bash large_inference_demo.sh --example 9ey0         # run entry named 9ey0
+  bash large_inference_demo.sh -r teaser              # TEASER++ registration only
+  CRYOZETA_CUDA=11 bash large_inference_demo.sh -g 1  # CUDA 11 via env var, GPU 1
 USAGE
 }
 
@@ -101,6 +108,10 @@ cli_env=""
 cli_gpu=""
 cli_example="0"
 cli_registration="auto"
+cli_input_json=""
+cli_output_dir=""
+cli_checkpoint=""
+cli_detection_checkpoint=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -116,12 +127,28 @@ while [ $# -gt 0 ]; do
         -r|--registration)
             [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
             cli_registration="$2"; shift 2 ;;
+        -i|--input-json)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_input_json="$2"; shift 2 ;;
+        -o|--output-dir)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_output_dir="$2"; shift 2 ;;
+        --checkpoint)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_checkpoint="$2"; shift 2 ;;
+        --detection-checkpoint)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_detection_checkpoint="$2"; shift 2 ;;
         -h|--help)
             usage; exit 0 ;;
         *)
             echo "ERROR: unknown option '$1'" >&2; usage; exit 1 ;;
     esac
 done
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${PIXI_PROJECT_ROOT:-${SCRIPT_DIR}}"
+ASSETS_DIR="${CRYOZETA_ASSETS_DIR:-${PROJECT_ROOT}/assets}"
 
 # ── Resolve pixi environment ─────────────────────────────────────────────────
 # Priority: CLI flag > PIXI_ENV (from activation) > CRYOZETA_CUDA > auto-detect
@@ -140,16 +167,18 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
-CONDA_PREFIX="$(pwd)/.pixi/envs/${PIXI_ENV}"
+CONDA_PREFIX="${PROJECT_ROOT}/.pixi/envs/${PIXI_ENV}"
 if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
     export TRITON_PTXAS_PATH="${CONDA_PREFIX}/bin/ptxas"
     export TRITON_PTXAS_BLACKWELL_PATH="${CONDA_PREFIX}/bin/ptxas"
 fi
 
+PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --frozen -e "${PIXI_ENV}")
+
 # Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
 # finds the pixi-managed nvcc (and matching host-compiler compatibility)
 # instead of a system-installed CUDA toolkit.
-PIXI_PREFIX="$(pixi run --frozen -e "${PIXI_ENV}" bash -c 'echo $CONDA_PREFIX')"
+PIXI_PREFIX="$("${PIXI_RUN[@]}" bash -c 'echo $CONDA_PREFIX')"
 export CUDA_HOME="${PIXI_PREFIX}"
 
 # ── Inference parameters ──────────────────────────────────────────────────────
@@ -163,8 +192,8 @@ use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
-checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
-detection_checkpoint_path="assets/cryozeta-detection-v0.0.1.safetensors"
+checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
+detection_checkpoint_path="${cli_detection_checkpoint:-${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors}"
 
 # ── Large inference / cycle prediction parameters ──────────────────────────────
 # Registration method: auto (default), teaser, svd, vesper
@@ -172,8 +201,8 @@ registration_method="${cli_registration}"
 # EM point cropping threshold (Å)
 em_threshold=5.0
 # Input and output paths
-input_json_path="assets/examples/large_examples.json"
-dump_dir="output/large_examples"
+input_json_path="${cli_input_json:-${ASSETS_DIR}/examples/large_examples.json}"
+dump_dir="${cli_output_dir:-${PROJECT_ROOT}/output/large_examples}"
 selected_entry="${cli_example}"
 selected_input_json="${dump_dir}/selected_input_entry.json"
 cycle_input_json="${dump_dir}/selected_cycle_input_entry.json"
@@ -184,6 +213,8 @@ gpu_ids="${cli_gpu:-1}"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "==> Using pixi environment: ${PIXI_ENV}"
+echo "==> Project root: ${PROJECT_ROOT}"
+echo "==> Assets dir: ${ASSETS_DIR}"
 gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "unknown")
 gpu_cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
 cuda_driver_ver=$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' || echo "unknown")
@@ -293,10 +324,10 @@ print(f"  cycle input:     {cycle_input_json}")
 PY
 
 echo "==> Running detection to generate EM .pt for selected sample..."
-CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-detection json-run \
-    "${selected_input_json}" "${dump_dir}" --device cuda --overwrite
+CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-detection json-run \
+    "${selected_input_json}" "${dump_dir}" --device cuda --checkpoint-path "${detection_checkpoint_path}" --overwrite
 
-CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-cycle-predict \
+CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-cycle-predict \
     --base_json "${cycle_input_json}" \
     --load_checkpoint_path "${checkpoint_path}" \
     --dump_root "${dump_dir}" \
@@ -320,7 +351,7 @@ echo "    Output directory: ${dump_dir}"
 
 echo "==> Combining stages into final structure..."
 
-pixi run --frozen -e "${PIXI_ENV}" cryozeta-combine-stages \
+"${PIXI_RUN[@]}" cryozeta-combine-stages \
     --dump_root "${dump_dir}" \
     --output "${dump_dir}/combined.cif"
 

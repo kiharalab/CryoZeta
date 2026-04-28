@@ -13,10 +13,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
 from safetensors.torch import load_file
 from torch import nn
+
+from cryozeta.utils.paths import resolve_asset_path
 
 from .blocks import (
     ConvBlock3d,
@@ -424,13 +428,19 @@ class ResidueMUNet(nn.Module):
         return output
 
 
-def get_detection_model(load_pretrained=True, compile=True):
+def get_detection_model(
+    load_pretrained=True, compile=True, checkpoint_path: str | None = None
+):
 
     model = ResidueMUNet(atom_mdl=MUNet(n_classes=9), n_classes=25)
 
     if load_pretrained:
-        model_path = "assets/cryozeta-detection-v0.0.1.safetensors"
-        model.load_state_dict(load_file(model_path))
+        model_path = (
+            Path(checkpoint_path).expanduser().resolve()
+            if checkpoint_path is not None
+            else resolve_asset_path("cryozeta-detection-v0.0.1.safetensors")
+        )
+        model.load_state_dict(load_file(str(model_path)))
 
     if compile:
         model = torch.compile(model)

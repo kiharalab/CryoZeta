@@ -36,6 +36,20 @@ from cryozeta.em import (
     write_coords_to_pdb,
 )
 from cryozeta.em.utils import _meanshiftpp_gpu_fallback
+from cryozeta.utils.paths import resolve_asset_path
+
+
+def _resolve_input_map_path(map_path: str, input_json_path: str) -> Path:
+    """Resolve a JSON map path independently of the current working directory."""
+    path = Path(map_path).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+
+    if path.parts and path.parts[0] == "assets":
+        return resolve_asset_path(path)
+
+    json_dir = Path(input_json_path).expanduser().resolve().parent
+    return (json_dir / path).resolve()
 
 
 @dataclass
@@ -62,6 +76,7 @@ class CryoEMInferenceConfig:
     no_protein: bool = False
     no_dna_rna: bool = False
     interp_threshold: int = 3000
+    detection_checkpoint_path: str | None = None
 
 
 def interpolate_and_sample(sampled_indices, atom_label, num_steps=5, num_points=None):
@@ -351,7 +366,9 @@ class CryoEMInference:
         # Load models
         logger.info("Loading models...")
         self.detection_model = get_detection_model(
-            load_pretrained=True, compile=config.compile
+            load_pretrained=True,
+            compile=config.compile,
+            checkpoint_path=config.detection_checkpoint_path,
         )
         self.detection_model.to(self.device).to(torch.bfloat16)
 
@@ -669,6 +686,11 @@ def run(
         "--interp-threshold",
         help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
     ),
+    checkpoint_path: str | None = typer.Option(
+        None,
+        "--checkpoint-path",
+        help="Path to the detection checkpoint (.safetensors). Defaults to CryoZeta runtime assets.",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -696,6 +718,7 @@ def run(
         no_protein=no_protein,
         no_dna_rna=no_dna_rna,
         interp_threshold=interp_threshold,
+        detection_checkpoint_path=checkpoint_path,
     )
 
     input_path = Path(input_file)
@@ -733,6 +756,11 @@ def json_run(
         "--interp-threshold",
         help="Skip interpolation feature calculation when the number of detected points exceeds this threshold",
     ),
+    checkpoint_path: str | None = typer.Option(
+        None,
+        "--checkpoint-path",
+        help="Path to the detection checkpoint (.safetensors). Defaults to CryoZeta runtime assets.",
+    ),
     overwrite: bool = typer.Option(
         False, "--overwrite/--no-overwrite", help="Overwrite existing output files"
     ),
@@ -745,7 +773,8 @@ def json_run(
 
     Output is organized per entry as ``{output_dir}/{name}/CryoZeta-Detection/``.
     """
-    with open(input_json) as f:
+    input_json_path = str(Path(input_json).expanduser().resolve())
+    with open(input_json_path) as f:
         data = json.load(f)
 
     base_output_path = Path(output_dir)
@@ -755,11 +784,12 @@ def json_run(
         compile=compile_models,
         device=device,
         interp_threshold=interp_threshold,
+        detection_checkpoint_path=checkpoint_path,
     )
     inference = CryoEMInference(config)
 
     for i, item in enumerate(data):
-        em_map_path = item["map_path"]
+        em_map_path = str(_resolve_input_map_path(item["map_path"], input_json_path))
         name = item.get("name")
         if name is None:
             logger.error(

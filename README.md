@@ -107,7 +107,7 @@ pixi shell -e cu13
 pixi shell
 ```
 
-Once inside the shell, all commands (including `sh inference_demo.sh`) will use
+Once inside the shell, all commands (including `bash inference_demo.sh`) will use
 the environment you selected. You can also target an environment directly
 without entering a shell:
 
@@ -135,23 +135,27 @@ Available environments:
 ### Quick Start
 
 ```bash
-sh inference_demo.sh
+bash /path/to/CryoZeta/inference_demo.sh
 ```
 
 This runs the full CryoZeta pipeline on the bundled example (`assets/examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU and driver.
+
+After setup, `inference_demo.sh`, `large_inference_demo.sh`, and the
+`cryozeta-*` entry points can be run both inside the CryoZeta repository root
+and from outside it.
 
 ### Large Structure Inference
 
 Use `large_inference_demo.sh` for large-complex cycle prediction with stage-wise EM filtering:
 
 ```bash
-sh large_inference_demo.sh --example 0
+bash /path/to/CryoZeta/large_inference_demo.sh --example 0
 ```
 
 `--example` selects exactly one entry from `assets/examples/large_examples.json` (by 0-based index or `name`):
 
 ```bash
-sh large_inference_demo.sh --example 9nb5
+bash /path/to/CryoZeta/large_inference_demo.sh --example 9nb5
 ```
 
 This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
@@ -241,7 +245,7 @@ Edit the parameters at the top of `inference_demo.sh` (input path, GPU id, etc.)
 then run:
 
 ```bash
-sh inference_demo.sh
+bash /path/to/CryoZeta/inference_demo.sh
 ```
 
 #### Output Files

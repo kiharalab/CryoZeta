@@ -27,11 +27,20 @@ Options:
                       Overrides auto-detection and PIXI_ENV / CRYOZETA_CUDA.
   -g, --gpu IDS       Comma-separated GPU device IDs (e.g. "0", "0,1").
                       Default: 0
+  -i, --input-json    Input JSON file. Default: CryoZeta example JSON.
+  -o, --output-dir    Output directory. Default: PROJECT_ROOT/output/example
+  -m, --mode MODE     One of: combined, cryozeta, cryozeta-interpolate.
+  --checkpoint PATH   CryoZeta checkpoint path.
+  --interp-checkpoint PATH
+                      CryoZeta-Interpolate checkpoint path.
+  --overwrite         Re-run even if outputs already exist.
   -h, --help          Show this help message and exit.
 
 Environment variables (lower priority than flags):
   PIXI_ENV            Pixi environment name (set by env_setup.sh activation).
   CRYOZETA_CUDA       CUDA major version shorthand (11, 12, 13).
+  CRYOZETA_ASSETS_DIR Override the runtime assets directory.
+  PIXI_PROJECT_ROOT   Override the project root used for defaults.
 
 Examples:
   sh inference_demo.sh                        # auto-detect everything
@@ -98,6 +107,12 @@ cuda_version_to_env() {
 # ── Parse command-line arguments ──────────────────────────────────────────────
 cli_env=""
 cli_gpu=""
+cli_input_json=""
+cli_output_dir=""
+cli_mode=""
+cli_checkpoint=""
+cli_interp_checkpoint=""
+cli_overwrite="false"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -107,12 +122,33 @@ while [ $# -gt 0 ]; do
         -g|--gpu)
             [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
             cli_gpu="$2"; shift 2 ;;
+        -i|--input-json)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_input_json="$2"; shift 2 ;;
+        -o|--output-dir)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_output_dir="$2"; shift 2 ;;
+        -m|--mode)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_mode="$2"; shift 2 ;;
+        --checkpoint)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_checkpoint="$2"; shift 2 ;;
+        --interp-checkpoint)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_interp_checkpoint="$2"; shift 2 ;;
+        --overwrite)
+            cli_overwrite="true"; shift ;;
         -h|--help)
             usage; exit 0 ;;
         *)
             echo "ERROR: unknown option '$1'" >&2; usage; exit 1 ;;
     esac
 done
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${PIXI_PROJECT_ROOT:-${SCRIPT_DIR}}"
+ASSETS_DIR="${CRYOZETA_ASSETS_DIR:-${PROJECT_ROOT}/assets}"
 
 # ── Resolve pixi environment ─────────────────────────────────────────────────
 # Priority: CLI flag > PIXI_ENV (from activation) > CRYOZETA_CUDA > auto-detect
@@ -131,16 +167,18 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
-CONDA_PREFIX="$(pwd)/.pixi/envs/${PIXI_ENV}"
+CONDA_PREFIX="${PROJECT_ROOT}/.pixi/envs/${PIXI_ENV}"
 if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
     export TRITON_PTXAS_PATH="${CONDA_PREFIX}/bin/ptxas"
     export TRITON_PTXAS_BLACKWELL_PATH="${CONDA_PREFIX}/bin/ptxas"
 fi
 
+PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --frozen -e "${PIXI_ENV}")
+
 # Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
 # finds the pixi-managed nvcc (and matching host-compiler compatibility)
 # instead of a system-installed CUDA toolkit.
-PIXI_PREFIX="$(pixi run --frozen -e "${PIXI_ENV}" bash -c 'echo $CONDA_PREFIX')"
+PIXI_PREFIX="$("${PIXI_RUN[@]}" bash -c 'echo $CONDA_PREFIX')"
 export CUDA_HOME="${PIXI_PREFIX}"
 
 # ── Inference parameters ──────────────────────────────────────────────────────
@@ -154,12 +192,13 @@ use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
-mode="combined"  # cryozeta, cryozeta-interpolate, or combined
-overwrite=false   # set to true to re-run even if output already exists
-checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
-checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
-input_json_path="assets/examples/example.json"
-dump_dir="output/example"
+mode="${cli_mode:-combined}"  # cryozeta, cryozeta-interpolate, or combined
+overwrite="${cli_overwrite}"
+checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
+checkpoint_interpolation_path="${cli_interp_checkpoint:-${ASSETS_DIR}/cryozeta-interpolate-v0.0.1.safetensors}"
+detection_checkpoint_path="${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors"
+input_json_path="${cli_input_json:-${ASSETS_DIR}/examples/example.json}"
+dump_dir="${cli_output_dir:-${PROJECT_ROOT}/output/example}"
 
 # ── GPU configuration ────────────────────────────────────────────────────────
 # CLI flag overrides the default; use -g/--gpu to set from command line.
@@ -167,11 +206,41 @@ gpu_ids="${cli_gpu:-0}"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "==> Using pixi environment: ${PIXI_ENV}"
+echo "==> Project root: ${PROJECT_ROOT}"
+echo "==> Assets dir: ${ASSETS_DIR}"
 gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "unknown")
 gpu_cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
 cuda_driver_ver=$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' || echo "unknown")
 echo "==> GPU ${gpu_ids}: ${gpu_name} (compute capability ${gpu_cc})"
 echo "==> CUDA driver version: ${cuda_driver_ver}"
+
+case "${mode}" in
+    combined|cryozeta|cryozeta-interpolate) ;;
+    *)
+        echo "ERROR: invalid mode '${mode}'" >&2
+        exit 1
+        ;;
+esac
+
+if [ ! -f "${input_json_path}" ]; then
+    echo "ERROR: Input JSON not found: ${input_json_path}" >&2
+    exit 1
+fi
+
+if [ ! -f "${detection_checkpoint_path}" ]; then
+    echo "ERROR: Detection checkpoint not found: ${detection_checkpoint_path}" >&2
+    exit 1
+fi
+
+if [ ! -f "${checkpoint_path}" ]; then
+    echo "ERROR: CryoZeta checkpoint not found: ${checkpoint_path}" >&2
+    exit 1
+fi
+
+if [ ! -f "${checkpoint_interpolation_path}" ]; then
+    echo "ERROR: CryoZeta-Interpolate checkpoint not found: ${checkpoint_interpolation_path}" >&2
+    exit 1
+fi
 
 # Build --overwrite flag for typer-based CLIs (cryozeta-detection)
 em_overwrite_flag=""
@@ -179,58 +248,58 @@ em_overwrite_flag=""
 
 # ── Step 1: Atom detection (single GPU) ──────────────────────────────────────
 # Outputs to: ${dump_dir}/<name>/CryoZeta-Detection/
-CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-detection json-run \
-    ${input_json_path} ${dump_dir} --device cuda ${em_overwrite_flag}
+CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-detection json-run \
+    "${input_json_path}" "${dump_dir}" --device cuda --checkpoint-path "${detection_checkpoint_path}" ${em_overwrite_flag}
 
 # ── Step 2: CryoZeta inference (single GPU) ──────────────────────────────────
 # Outputs to: ${dump_dir}/<name>/CryoZeta/seed_<seed>/
 if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
-    CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-inference \
-    --seeds ${seed} \
-    --load_checkpoint_path ${checkpoint_path} \
-    --em_file_dir ${dump_dir} \
-    --dump_dir ${dump_dir} \
-    --input_json_path ${input_json_path} \
-    --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
-    --use_cuequivariance_attention ${use_cuequivariance_attention} \
-    --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
-    --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-    --use_opm_tilelang ${use_opm_tilelang} \
-    --model.N_cycle ${N_cycle} \
-    --sample_diffusion.N_sample ${N_sample} \
-    --sample_diffusion.N_step ${N_step} \
+    CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-inference \
+    --seeds "${seed}" \
+    --load_checkpoint_path "${checkpoint_path}" \
+    --em_file_dir "${dump_dir}" \
+    --dump_dir "${dump_dir}" \
+    --input_json_path "${input_json_path}" \
+    --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
+    --use_cuequivariance_attention "${use_cuequivariance_attention}" \
+    --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
+    --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
+    --use_opm_tilelang "${use_opm_tilelang}" \
+    --model.N_cycle "${N_cycle}" \
+    --sample_diffusion.N_sample "${N_sample}" \
+    --sample_diffusion.N_step "${N_step}" \
     --data.num_dl_workers 1 \
     --use_interpolation false \
-    --overwrite ${overwrite}
+    --overwrite "${overwrite}"
 fi
 
 # Outputs to: ${dump_dir}/<name>/CryoZeta-Interpolate/seed_<seed>/
 if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
-    CUDA_VISIBLE_DEVICES=${gpu_ids} pixi run --frozen -e "${PIXI_ENV}" cryozeta-inference \
-    --seeds ${seed} \
-    --load_checkpoint_path ${checkpoint_interpolation_path} \
-    --dump_dir ${dump_dir} \
-    --em_file_dir ${dump_dir} \
-    --input_json_path ${input_json_path} \
-    --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
-    --use_cuequivariance_attention ${use_cuequivariance_attention} \
-    --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
-    --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-    --use_opm_tilelang ${use_opm_tilelang} \
-    --model.N_cycle ${N_cycle} \
-    --sample_diffusion.N_sample ${N_sample} \
-    --sample_diffusion.N_step ${N_step} \
+    CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-inference \
+    --seeds "${seed}" \
+    --load_checkpoint_path "${checkpoint_interpolation_path}" \
+    --dump_dir "${dump_dir}" \
+    --em_file_dir "${dump_dir}" \
+    --input_json_path "${input_json_path}" \
+    --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
+    --use_cuequivariance_attention "${use_cuequivariance_attention}" \
+    --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
+    --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
+    --use_opm_tilelang "${use_opm_tilelang}" \
+    --model.N_cycle "${N_cycle}" \
+    --sample_diffusion.N_sample "${N_sample}" \
+    --sample_diffusion.N_step "${N_step}" \
     --data.num_dl_workers 1 \
     --use_interpolation true \
-    --overwrite ${overwrite}
+    --overwrite "${overwrite}"
 fi
 
 # ── Step 3: Combine best results (CPU only) ──────────────────────────────────
 # Outputs to: ${dump_dir}/<name>/CryoZeta-Final/
 if [ "$mode" = "combined" ]; then
-    pixi run --frozen -e "${PIXI_ENV}" cryozeta-combine \
-    --dump-dir ${dump_dir} \
-    --input-json-path ${input_json_path} \
-    --seeds ${seed} \
-    --num-select ${N_sample}
+    "${PIXI_RUN[@]}" cryozeta-combine \
+    --dump-dir "${dump_dir}" \
+    --input-json-path "${input_json_path}" \
+    --seeds "${seed}" \
+    --num-select "${N_sample}"
 fi

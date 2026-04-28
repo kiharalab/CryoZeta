@@ -15,6 +15,8 @@
 # pylint: disable=C0114,C0301
 import os
 
+from cryozeta.utils.paths import resolve_asset_path
+
 data_configs = {
     "num_dl_workers": 16,
     "test_ref_pos_augment": True,
@@ -51,8 +53,8 @@ data_configs = {
     "template": {
         "enable": False,
     },
-    "ccd_components_file": os.path.join("assets", "components.v20240608.cif"),
-    "ccd_components_rdkit_mol_file": os.path.join(
-        "assets", "components.v20240608.cif.rdkit_mol.pkl"
+    "ccd_components_file": str(resolve_asset_path("components.v20240608.cif")),
+    "ccd_components_rdkit_mol_file": str(
+        resolve_asset_path("components.v20240608.cif.rdkit_mol.pkl")
     ),
 }

@@ -17,6 +17,7 @@ import time
 import traceback
 import warnings
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -29,9 +30,47 @@ from cryozeta.data.json_to_feature import SampleDictToFeatures
 from cryozeta.data.msa_featurizer import InferenceMSAFeaturizer
 from cryozeta.data.utils import data_type_transform, make_dummy_feature
 from cryozeta.utils.distributed import DIST_WRAPPER
+from cryozeta.utils.paths import resolve_asset_path
 from cryozeta.utils.torch_utils import dict_to_tensor
 
 warnings.filterwarnings("ignore", module="biotite")
+
+
+_JSON_PATH_KEYS = {
+    "map_path",
+    "em_file",
+    "precomputed_msa_dir",
+    "msa_save_dir",
+    "pairing_db_fpath",
+    "non_pairing_db_fpath",
+}
+
+
+def _resolve_json_path(value: str, json_dir: Path) -> str:
+    """Resolve a path from an inference JSON entry independent of cwd."""
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return str(path.resolve())
+
+    if path.parts and path.parts[0] == "assets":
+        return str(resolve_asset_path(path))
+
+    return str((json_dir / path).resolve())
+
+
+def _normalize_json_paths(obj: Any, json_dir: Path) -> Any:
+    """Recursively resolve path-like values inside loaded inference JSON data."""
+    if isinstance(obj, dict):
+        normalized = {}
+        for key, value in obj.items():
+            if key in _JSON_PATH_KEYS and isinstance(value, str) and value:
+                normalized[key] = _resolve_json_path(value, json_dir)
+            else:
+                normalized[key] = _normalize_json_paths(value, json_dir)
+        return normalized
+    if isinstance(obj, list):
+        return [_normalize_json_paths(item, json_dir) for item in obj]
+    return obj
 
 
 def get_inference_dataloader(configs: Any, skip_names: set[str] | None = None) -> DataLoader:
@@ -87,8 +126,10 @@ class InferenceDataset(Dataset):
         self.enable_rna_msa = enable_rna_msa
         self.em_file_dir = em_file_dir
         self.skip_names = skip_names if skip_names is not None else set()
-        with open(self.input_json_path) as f:
-            self.inputs = json.load(f)
+        json_path = Path(self.input_json_path).expanduser().resolve()
+        self.input_json_path = str(json_path)
+        with open(json_path) as f:
+            self.inputs = _normalize_json_paths(json.load(f), json_path.parent)
 
     def process_one(
         self,
