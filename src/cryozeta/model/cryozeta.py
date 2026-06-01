@@ -572,6 +572,8 @@ class CryoZeta(nn.Module):
 
         for seq in input_feature_dict["sequences"]:
             seq_type = next(iter(seq.keys()))
+            if seq_type in ("ligand", "ion"):
+                continue
             length = len(seq[seq_type]["sequence"])
             count = seq[seq_type]["count"]
             for _i in range(count):
