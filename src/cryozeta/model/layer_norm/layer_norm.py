@@ -37,7 +37,6 @@ except ImportError:
             for file in ["layer_norm_cuda.cpp", "layer_norm_cuda_kernel.cu"]
         ],
         extra_include_paths=[f"{current_dir}/kernel"],
-        build_directory=current_dir,
     )
 
 

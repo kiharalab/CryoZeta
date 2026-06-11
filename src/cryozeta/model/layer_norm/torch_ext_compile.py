@@ -18,6 +18,9 @@ import platform
 import torch
 from torch.utils.cpp_extension import CUDA_HOME, load
 
+_CRYOZETA_EXTENSION_CACHE_ENV = "CRYOZETA_TORCH_EXTENSIONS_DIR"
+_CRYOZETA_MODEL_CACHE_ENV = "CRYOZETA_MODEL_CACHE_DIR"
+
 
 def _get_extra_cuda_include_paths():
     if CUDA_HOME is None:
@@ -47,11 +50,35 @@ def _get_cuda_archs():
     return archs
 
 
-def compile(name, sources, extra_include_paths, build_directory):
+def _expand_cache_path(path):
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
+
+
+def _get_cryozeta_extension_cache_root():
+    for env_var in (_CRYOZETA_EXTENSION_CACHE_ENV, _CRYOZETA_MODEL_CACHE_ENV):
+        path = os.environ.get(env_var)
+        if path:
+            return _expand_cache_path(path)
+    return None
+
+
+def _get_build_directory(name, cuda_env, build_directory=None):
+    cache_root = _get_cryozeta_extension_cache_root()
+    if cache_root is not None:
+        return os.path.join(cache_root, name, cuda_env)
+
+    if build_directory is None:
+        return None
+
+    return os.path.join(build_directory, cuda_env)
+
+
+def compile(name, sources, extra_include_paths, build_directory=None):
     cuda_version = tuple(int(x) for x in torch.version.cuda.split(".")[:2])
     cuda_env = f"cu{cuda_version[0]}{cuda_version[1]}"
-    env_build_dir = os.path.join(build_directory, cuda_env)
-    os.makedirs(env_build_dir, exist_ok=True)
+    env_build_dir = _get_build_directory(name, cuda_env, build_directory)
+    if env_build_dir is not None:
+        os.makedirs(env_build_dir, exist_ok=True)
 
     archs = _get_cuda_archs()
     os.environ["TORCH_CUDA_ARCH_LIST"] = ";".join(archs)
@@ -62,17 +89,17 @@ def compile(name, sources, extra_include_paths, build_directory):
     cuda_include_flags = []
     for p in _get_extra_cuda_include_paths():
         cuda_include_flags.extend(["-I", p])
-    return load(
-        name=name,
-        sources=sources,
-        extra_include_paths=extra_include_paths + _get_extra_cuda_include_paths(),
-        extra_cflags=[
+    load_kwargs = {
+        "name": name,
+        "sources": sources,
+        "extra_include_paths": extra_include_paths + _get_extra_cuda_include_paths(),
+        "extra_cflags": [
             "-O3",
             "-DVERSION_GE_1_1",
             "-DVERSION_GE_1_3",
             "-DVERSION_GE_1_5",
         ],
-        extra_cuda_cflags=[
+        "extra_cuda_cflags": [
             "-O3",
             "--use_fast_math",
             "-DVERSION_GE_1_1",
@@ -87,6 +114,9 @@ def compile(name, sources, extra_include_paths, build_directory):
             *cuda_include_flags,
             *gencode_flags,
         ],
-        verbose=True,
-        build_directory=env_build_dir,
-    )
+        "verbose": True,
+    }
+    if env_build_dir is not None:
+        load_kwargs["build_directory"] = env_build_dir
+
+    return load(**load_kwargs)

@@ -144,6 +144,24 @@ After setup, `inference_demo.sh`, `large_inference_demo.sh`, and the
 `cryozeta-*` entry points can be run both inside the CryoZeta repository root
 and from outside it.
 
+### Optional Runtime Cache Location
+
+CryoZeta compiles a small CUDA layer-normalization extension the first time it
+is needed. For normal user installs, no extra setup is required; PyTorch will
+use its default user-writable extension cache.
+
+For shared or read-only installations, such as centrally managed HPC/module
+installs, set `CRYOZETA_TORCH_EXTENSIONS_DIR` to a writable directory before
+running CryoZeta:
+
+```bash
+export CRYOZETA_TORCH_EXTENSIONS_DIR=/path/to/writable/cache
+bash /path/to/CryoZeta/inference_demo.sh
+```
+
+If your compiler reports `No space left on device` under `/tmp`, set `TMPDIR`
+to a writable scratch directory as well.
+
 ### Large Structure Inference
 
 Use `large_inference_demo.sh` for large-complex cycle prediction with stage-wise EM filtering:
