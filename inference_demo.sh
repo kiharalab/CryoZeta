@@ -173,7 +173,7 @@ if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
     export TRITON_PTXAS_BLACKWELL_PATH="${CONDA_PREFIX}/bin/ptxas"
 fi
 
-PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --frozen -e "${PIXI_ENV}")
+PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --no-install --frozen -e "${PIXI_ENV}")
 
 # Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
 # finds the pixi-managed nvcc (and matching host-compiler compatibility)
