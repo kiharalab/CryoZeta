@@ -45,15 +45,16 @@ class FusedLayerNormAffineFunction(torch.autograd.Function):
     def forward(ctx, input, weight, bias, normalized_shape, eps):
         d = input.dtype
         if d is torch.bfloat16:
-            ctx.normalized_shape = normalized_shape
-            ctx.eps = eps
-            input_ = input.contiguous()
-            weight_ = weight.contiguous().to(dtype=d)
-            bias_ = bias.contiguous().to(dtype=d)
-            output, mean, invvar = fastfold_layer_norm_cuda.forward_affine(
-                input_, ctx.normalized_shape, weight_, bias_, ctx.eps
-            )
-            ctx.save_for_backward(input_, weight_, bias_, mean, invvar)
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                ctx.normalized_shape = normalized_shape
+                ctx.eps = eps
+                input_ = input.contiguous()
+                weight_ = weight.contiguous().to(dtype=d)
+                bias_ = bias.contiguous().to(dtype=d)
+                output, mean, invvar = fastfold_layer_norm_cuda.forward_affine(
+                    input_, ctx.normalized_shape, weight_, bias_, ctx.eps
+                )
+                ctx.save_for_backward(input_, weight_, bias_, mean, invvar)
         else:
             ctx.normalized_shape = normalized_shape
             ctx.eps = eps
@@ -71,32 +72,33 @@ class FusedLayerNormAffineFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         d = grad_output.dtype
         if d is torch.bfloat16:
-            input_, weight_, bias_, mean, invvar = ctx.saved_tensors
-            grad_input = grad_weight = grad_bias = None
-            grad_input, grad_weight, grad_bias = (
-                fastfold_layer_norm_cuda.backward_affine(
-                    grad_output.contiguous(),
-                    mean,
-                    invvar,
-                    input_,
-                    ctx.normalized_shape,
-                    weight_.to(dtype=d),
-                    bias_.to(dtype=d),
-                    ctx.eps,
+            with torch.amp.autocast(device_type="cuda", enabled=False):
+                input_, weight_, bias_, mean, invvar = ctx.saved_tensors
+                grad_input = grad_weight = grad_bias = None
+                grad_input, grad_weight, grad_bias = (
+                    fastfold_layer_norm_cuda.backward_affine(
+                        grad_output.contiguous(),
+                        mean,
+                        invvar,
+                        input_,
+                        ctx.normalized_shape,
+                        weight_.to(dtype=d),
+                        bias_.to(dtype=d),
+                        ctx.eps,
+                    )
                 )
-            )
-            grad_input, grad_weight, grad_bias = (
-                fastfold_layer_norm_cuda.backward_affine(
-                    grad_output.contiguous(),
-                    mean,
-                    invvar,
-                    input_,
-                    ctx.normalized_shape,
-                    weight_.to(dtype=d),
-                    bias_.to(dtype=d),
-                    ctx.eps,
+                grad_input, grad_weight, grad_bias = (
+                    fastfold_layer_norm_cuda.backward_affine(
+                        grad_output.contiguous(),
+                        mean,
+                        invvar,
+                        input_,
+                        ctx.normalized_shape,
+                        weight_.to(dtype=d),
+                        bias_.to(dtype=d),
+                        ctx.eps,
+                    )
                 )
-            )
         else:
             input_, weight_, bias_, mean, invvar = ctx.saved_tensors
             grad_input = grad_weight = grad_bias = None
