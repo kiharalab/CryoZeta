@@ -15,8 +15,10 @@
 import os
 from pathlib import Path
 
+import numpy as np
 import torch
 from biotite.structure import AtomArray
+from loguru import logger
 
 from cryozeta.data.utils import save_structure_cif
 from cryozeta.utils.file_io import save_json
@@ -49,6 +51,53 @@ _COORD_TYPE_MAP = {
     "coordinate_vesper": "vesper",
 }
 
+# full_data keys indexed along the atom dimension
+_ATOM_LEVEL_FULL_DATA_KEYS = ("atom_plddt", "atom_is_polymer", "atom_coordinate")
+# full_data keys indexed along the token dimension (vector entries)
+_TOKEN_LEVEL_FULL_DATA_KEYS = ("token_has_frame", "token_asym_id")
+# full_data keys indexed along both token dimensions (matrix entries)
+_TOKEN_PAIR_FULL_DATA_KEYS = ("token_pair_pde", "token_pair_pae", "contact_probs")
+
+
+def filter_full_data_by_atoms(full_data: dict, atom_keep_mask: np.ndarray) -> dict:
+    """Filter a per-sample full_data dict to the kept atoms.
+
+    Atom-level entries are indexed by the keep mask.  Tokens that lose all of
+    their atoms are dropped from the token-level entries and
+    ``atom_to_token_idx`` is remapped to the new token indexing.  Tensors are
+    moved to CPU.
+
+    Args:
+        full_data: Per-sample full_data dict (tensors without a batch dim).
+        atom_keep_mask: Boolean numpy array of shape ``(N_atom,)``.
+
+    Returns:
+        A new dict with filtered entries.
+    """
+    full_data = {
+        key: value.cpu() if hasattr(value, "cpu") else value
+        for key, value in full_data.items()
+    }
+    keep_atom = torch.from_numpy(atom_keep_mask)
+    atom_to_token_idx = full_data["atom_to_token_idx"]
+    keep_token = torch.zeros(int(atom_to_token_idx.max().item()) + 1, dtype=torch.bool)
+    keep_token[atom_to_token_idx[keep_atom].long()] = True
+    token_remap = torch.cumsum(keep_token.long(), dim=0) - 1
+
+    filtered = {}
+    for key, value in full_data.items():
+        if key in _ATOM_LEVEL_FULL_DATA_KEYS:
+            filtered[key] = value[keep_atom]
+        elif key == "atom_to_token_idx":
+            filtered[key] = token_remap[value[keep_atom].long()]
+        elif key in _TOKEN_LEVEL_FULL_DATA_KEYS:
+            filtered[key] = value[keep_token]
+        elif key in _TOKEN_PAIR_FULL_DATA_KEYS:
+            filtered[key] = value[keep_token][:, keep_token]
+        else:
+            filtered[key] = value
+    return filtered
+
 
 class DataDumper:
     def __init__(
@@ -72,11 +121,23 @@ class DataDumper:
         pred_dict: dict,
         atom_array: AtomArray,
         entity_poly_type: dict[str, str],
+        atom_masks: list[np.ndarray] | None = None,
     ):
         """
         Dump the predictions and related data to the specified directory.
 
         Output is organized as ``{base_dir}/{pdb_id}/{stage_name}/seed_{seed}/``.
+
+        Args:
+            pdb_id: Sample name.
+            seed: Seed index.
+            pred_dict: Model prediction dict.
+            atom_array: Input AtomArray (one entry per atom).
+            entity_poly_type: Entity-to-poly-type mapping.
+            atom_masks: Optional list of per-sample boolean arrays of shape
+                ``(N_atom,)``.  When given, atoms outside the density-support
+                mask are excluded from the saved structures and atom-level
+                confidence data.  Samples with an all-False mask are skipped.
         """
         dump_dir = self._get_dump_dir(pdb_id, seed)
         Path(dump_dir).mkdir(parents=True, exist_ok=True)
@@ -88,6 +149,7 @@ class DataDumper:
             seed=seed,
             atom_array=atom_array,
             entity_poly_type=entity_poly_type,
+            atom_masks=atom_masks,
         )
 
     def _get_dump_dir(self, sample_name: str, seed: int) -> str:
@@ -109,6 +171,7 @@ class DataDumper:
         seed: int,
         atom_array: AtomArray,
         entity_poly_type: dict[str, str],
+        atom_masks: list[np.ndarray] | None = None,
     ):
         """
         Dump raw predictions from the model:
@@ -145,6 +208,7 @@ class DataDumper:
                     entity_poly_type=entity_poly_type,
                     sorted_indices=sorted_indices,
                     coord_type=_COORD_TYPE_MAP.get(result),
+                    atom_masks=atom_masks,
                 )
             if result == "coordinate":
                 self._save_confidence(
@@ -152,6 +216,7 @@ class DataDumper:
                     prediction_save_dir=prediction_save_dir,
                     sample_name=pdb_id,
                     sorted_indices=sorted_indices,
+                    atom_masks=atom_masks,
                 )
 
     def _save_structure(
@@ -164,6 +229,7 @@ class DataDumper:
         entity_poly_type: dict[str, str],
         sorted_indices: list[int] | None = None,
         coord_type: str | None = None,
+        atom_masks: list[np.ndarray] | None = None,
     ):
         assert atom_array is not None
         N_sample = pred_coordinates.shape[0]
@@ -182,12 +248,27 @@ class DataDumper:
         suffix = f"_{coord_type}" if coord_type else ""
 
         for rank, idx in enumerate(sorted_indices):
+            sample_coords = pred_coordinates[idx]
+            sample_atom_array = atom_array
+            if atom_masks is not None:
+                keep_mask = atom_masks[idx]
+                if not keep_mask.any():
+                    logger.warning(
+                        f"{sample_name} sample {idx}: all atoms fall outside the "
+                        f"density-support mask, skipping structure dump "
+                        f"(coord_type={coord_type or 'coordinate'})"
+                    )
+                    continue
+                keep_tensor = torch.from_numpy(keep_mask).to(sample_coords.device)
+                sample_coords = sample_coords[keep_tensor]
+                sample_atom_array = atom_array[keep_mask]
+
             output_fpath = os.path.join(
                 prediction_save_dir, f"{sample_name}_sample_{rank}.cif"
             )
             save_structure_cif(
-                atom_array=atom_array,
-                pred_coordinate=pred_coordinates[idx],
+                atom_array=sample_atom_array,
+                pred_coordinate=sample_coords,
                 output_fpath=output_fpath,
                 entity_poly_type=entity_poly_type,
                 pdb_id=sample_name,
@@ -202,18 +283,30 @@ class DataDumper:
         prediction_save_dir: str,
         sample_name: str,
         sorted_indices: list[int] | None = None,
+        atom_masks: list[np.ndarray] | None = None,
     ):
         N_sample = len(data["summary_confidence"])
         for idx in range(N_sample):
+            if atom_masks is not None and not atom_masks[idx].any():
+                continue
             if self.need_atom_confidence:
-                data["full_data"][idx] = get_clean_full_confidence(
-                    data["full_data"][idx]
-                )
+                full_data = data["full_data"][idx]
+                if not full_data:
+                    continue
+                if atom_masks is not None:
+                    full_data = filter_full_data_by_atoms(full_data, atom_masks[idx])
+                data["full_data"][idx] = get_clean_full_confidence(full_data)
 
         if sorted_indices is None:
             sorted_indices = list(range(N_sample))
 
         for rank, idx in enumerate(sorted_indices):
+            if atom_masks is not None and not atom_masks[idx].any():
+                logger.warning(
+                    f"{sample_name} sample {idx}: all atoms fall outside the "
+                    "density-support mask, skipping confidence dump"
+                )
+                continue
             output_fpath = os.path.join(
                 prediction_save_dir,
                 f"{sample_name}_summary_confidence_sample_{rank}.json",

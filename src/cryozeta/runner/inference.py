@@ -18,8 +18,10 @@ import traceback
 from collections.abc import Mapping
 from contextlib import nullcontext
 from os.path import exists as opexists, join as opjoin
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.distributed as dist
 from loguru import logger
@@ -30,9 +32,16 @@ from cryozeta.configs.configs_base import configs as configs_base
 from cryozeta.configs.configs_data import data_configs
 from cryozeta.configs.configs_inference import inference_configs
 from cryozeta.data.infer_data_pipeline import get_inference_dataloader
+from cryozeta.em import (
+    MapObject,
+    compute_keep_masks_for_predictions,
+    parse_mrc,
+)
+from cryozeta.em.mask import build_density_support_mask
 from cryozeta.model.cryozeta import CryoZeta
 from cryozeta.runner.dumper import DataDumper
 from cryozeta.utils.distributed import DIST_WRAPPER
+from cryozeta.utils.paths import resolve_asset_path
 from cryozeta.utils.seed import seed_everything
 from cryozeta.utils.torch_utils import to_device
 
@@ -175,6 +184,107 @@ def _has_interpolation_features(em_file_dir: str, sample_name: str) -> bool:
     )
 
 
+def _resolve_map_path(map_path: str, input_json_path: str) -> str:
+    """Resolve a JSON map path independently of the current working directory."""
+    path = Path(map_path).expanduser()
+    if path.is_absolute():
+        return str(path.resolve())
+    if path.parts and path.parts[0] == "assets":
+        return str(resolve_asset_path(path))
+    json_dir = Path(input_json_path).expanduser().resolve().parent
+    return str((json_dir / path).resolve())
+
+
+def _load_mask_filter_entries(configs: Any) -> dict[str, dict]:
+    """Build a name -> input-JSON-entry lookup for mask filtering."""
+    with open(configs.input_json_path) as f:
+        entries = json.load(f)
+    return {entry["name"]: entry for entry in entries if entry.get("name") is not None}
+
+
+class MaskFilterHelper:
+    """Builds and caches density-support masks for mask-based output filtering.
+
+    The mask is generated once per sample from the experimental map: voxels at
+    or above the author-recommended contour level seed the support, which is
+    Gaussian-blurred, re-thresholded with Li's minimum cross-entropy method,
+    and stripped of small connected components.  Predicted residues outside
+    the mask are excluded from the dumped structures.
+    """
+
+    def __init__(self, configs: Any) -> None:
+        self.configs = configs
+        self.entries = _load_mask_filter_entries(configs)
+        # sample_name -> (mask, MapObject) once built; None marks an entry
+        # where the mask could not be built (filtering is skipped for it).
+        self._mask_cache: dict[str, tuple[np.ndarray, MapObject] | None] = {}
+
+    def _build_mask(self, sample_name: str) -> tuple[np.ndarray, MapObject] | None:
+        if sample_name in self._mask_cache:
+            return self._mask_cache[sample_name]
+
+        entry = self.entries.get(sample_name)
+        mask_info: tuple[np.ndarray, MapObject] | None = None
+        try:
+            map_path = entry.get("map_path") if entry else None
+            if not map_path:
+                raise ValueError("no 'map_path' in the input JSON entry")
+            resolved_path = _resolve_map_path(
+                str(map_path), self.configs.input_json_path
+            )
+            contour_level = self.configs.mask_filter_contour_level
+            if contour_level is None:
+                contour_level = entry.get("contour_level")
+            if contour_level is None:
+                logger.warning(
+                    f"[{sample_name}] no contour level available "
+                    "(no 'contour_level' in the input JSON entry and no "
+                    "--mask_filter_contour_level override); the mask will be "
+                    "seeded from positive density instead"
+                )
+            map_obj = parse_mrc(resolved_path)
+            mask = build_density_support_mask(
+                map_obj.grid_data,
+                contour_level=contour_level,
+                sigma=self.configs.mask_filter_sigma,
+                min_component_size=self.configs.mask_filter_min_component_size,
+            )
+            if not mask.any():
+                raise ValueError("density-support mask is empty")
+            logger.info(
+                f"[{sample_name}] density-support mask built "
+                f"(contour_level={contour_level}, "
+                f"sigma={self.configs.mask_filter_sigma}, "
+                f"{int(mask.sum())} masked voxels)"
+            )
+            mask_info = (mask, map_obj)
+        except Exception as e:
+            logger.warning(
+                f"[{sample_name}] mask filtering disabled for this entry: {e}"
+            )
+
+        self._mask_cache[sample_name] = mask_info
+        return mask_info
+
+    def compute_atom_masks(
+        self,
+        sample_name: str,
+        pred_coordinates: torch.Tensor,
+        atom_array,
+    ) -> list[np.ndarray] | None:
+        """Compute per-sample atom keep masks; None disables filtering."""
+        mask_info = self._build_mask(sample_name)
+        if mask_info is None:
+            return None
+        mask, map_obj = mask_info
+        return compute_keep_masks_for_predictions(
+            pred_coordinates=pred_coordinates,
+            atom_array=atom_array,
+            mask=mask,
+            map_obj=map_obj,
+        )
+
+
 def main(configs: Any) -> None:
     # When use_interpolation is requested, pre-check which entries actually
     # have interpolation features in their detection output.  Entries that
@@ -196,6 +306,9 @@ def main(configs: Any) -> None:
     # Runner
     runner = InferenceRunner(configs)
 
+    # Mask-filter helper (no-op unless use_mask_filter is enabled)
+    mask_filter_helper = MaskFilterHelper(configs) if configs.use_mask_filter else None
+
     # Data
     logger.info(f"Loading data from\n{configs.input_json_path}")
     dataloader = get_inference_dataloader(configs=configs, skip_names=skip_interp_names)
@@ -206,9 +319,9 @@ def main(configs: Any) -> None:
         for batch in dataloader:
             try:
                 data, atom_array, data_error_message = batch[0]
-                
+
                 sample_name = data.get("sample_name")
-                
+
                 # Skip if featurization was skipped (no input features)
                 if "input_feature_dict" not in data:
                     logger.info(
@@ -216,7 +329,7 @@ def main(configs: Any) -> None:
                         "CryoZeta-Interpolate (no interpolation features)"
                     )
                     continue
-                
+
                 data["input_feature_dict"]["atom_array"] = atom_array
                 data["input_feature_dict"]["entity_poly_type"] = data[
                     "entity_poly_type"
@@ -259,12 +372,22 @@ def main(configs: Any) -> None:
                 data["input_feature_dict"]["dump_dir"] = entry_stage_dir
 
                 prediction = runner.predict(data)
+
+                atom_masks = None
+                if mask_filter_helper is not None:
+                    atom_masks = mask_filter_helper.compute_atom_masks(
+                        sample_name=sample_name,
+                        pred_coordinates=prediction["coordinate"],
+                        atom_array=atom_array,
+                    )
+
                 runner.dumper.dump(
                     pdb_id=sample_name,
                     seed=seed,
                     pred_dict=prediction,
                     atom_array=atom_array,
                     entity_poly_type=data["entity_poly_type"],
+                    atom_masks=atom_masks,
                 )
 
                 logger.info(

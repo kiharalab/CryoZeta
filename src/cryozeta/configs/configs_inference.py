@@ -13,7 +13,11 @@
 # under GPLv3.
 
 # pylint: disable=C0114
-from cryozeta.configs.extend_types import ListValue, RequiredValue
+from cryozeta.configs.extend_types import (
+    DefaultNoneWithType,
+    ListValue,
+    RequiredValue,
+)
 
 inference_configs = {
     "seeds": ListValue([101]),
@@ -25,4 +29,14 @@ inference_configs = {
     "use_msa": True,
     "enable_rna_msa": True,
     "overwrite": False,
+    # Density-support mask filtering: build a mask from the experimental map
+    # (author-recommended contour level seed + Gaussian blur + Li re-threshold)
+    # and exclude predicted residues outside the mask from the saved structures.
+    "use_mask_filter": False,
+    "mask_filter_sigma": 5.0,
+    "mask_filter_min_component_size": 1024,
+    # Explicit contour level override in the map's native intensity scale.
+    # When None, the per-entry "contour_level" from the input JSON is used;
+    # if that is also missing, positive density seeds the mask instead.
+    "mask_filter_contour_level": DefaultNoneWithType(float),
 }

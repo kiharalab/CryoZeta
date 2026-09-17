@@ -14,6 +14,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .map import MapObject, crop_mrc, normalize_mrc, parse_mrc, resample_mrc, save_mrc
+from .mask import (
+    build_density_support_mask,
+    build_mask_from_map_file,
+    compute_keep_masks_for_predictions,
+    sample_mask_at_coords,
+)
 from .munet import get_detection_model
 from .utils import (
     get_shifted_indices,
@@ -24,6 +30,9 @@ from .utils import (
 
 __all__ = [
     "MapObject",
+    "build_density_support_mask",
+    "build_mask_from_map_file",
+    "compute_keep_masks_for_predictions",
     "crop_mrc",
     "get_detection_model",
     "get_shifted_indices",
@@ -31,6 +40,7 @@ __all__ = [
     "normalize_mrc",
     "parse_mrc",
     "resample_mrc",
+    "sample_mask_at_coords",
     "save_mrc",
     "sliding_window_inference",
     "write_coords_to_pdb",

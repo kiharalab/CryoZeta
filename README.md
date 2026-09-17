@@ -140,6 +140,14 @@ bash /path/to/CryoZeta/inference_demo.sh
 
 This runs the full CryoZeta pipeline on the bundled example (`assets/examples/example.json`) and writes results to `output/example/`. The correct CUDA environment is auto-detected from your GPU and driver.
 
+To restrict the predicted structures to the density support of the experimental map, pass `--mask-filter`:
+
+```bash
+bash /path/to/CryoZeta/inference_demo.sh --mask-filter
+```
+
+See [Density-Support Mask Filtering](#density-support-mask-filtering) below.
+
 After setup, `inference_demo.sh`, `large_inference_demo.sh`, and the
 `cryozeta-*` entry points can be run both inside the CryoZeta repository root
 and from outside it.
@@ -202,7 +210,7 @@ cryo-EM target. See `assets/examples/example.json` for a complete example.
 | `modelSeeds` | list | Reserved for future use (can be left empty `[]`). |
 | `map_path` | string | Path to the cryo-EM density map (`.map` or `.map.gz`). |
 | `resolution` | float | Resolution of the cryo-EM map in angstroms. |
-| `contour_level` | float | Recommended contour level for the map. |
+| `contour_level` | float | Recommended contour level for the map. Also seeds the density-support mask when `--mask-filter` is enabled. |
 | `sequences` | list | List of biomolecular chains in the complex (see below). |
 
 #### Sequence Types
@@ -300,6 +308,41 @@ The primary output is the `CryoZeta-Final/` directory, which contains the
 top-ranked predicted structures selected from both the standard and interpolation
 models. Each structure is in **mmCIF** format and can be opened with molecular
 viewers such as ChimeraX or PyMOL.
+
+### Density-Support Mask Filtering
+
+Predicted structures can be restricted to the density support of the
+experimental map by enabling mask filtering:
+
+```bash
+# via the demo script
+bash /path/to/CryoZeta/inference_demo.sh --mask-filter
+
+# or directly, via the cryozeta-inference CLI
+cryozeta-inference ... --use_mask_filter true
+```
+
+When enabled, a macromolecule mask is generated once per entry from the
+experimental map:
+
+1. **Contour seed.** Voxels with density at or above the author-recommended
+   contour level (`contour_level` in the input JSON, or an explicit
+   `--mask_filter_contour_level` override) seed the support. If no contour
+   level is available, positive density is used instead.
+2. **Gaussian blurring.** The binary support is smoothed with a 3-D Gaussian
+   filter (`--mask_filter_sigma`, in voxel units, default 5.0).
+3. **Re-thresholding.** Li's minimum cross-entropy threshold is recomputed on
+   the blurred support and applied back to the volume.
+4. **Cleanup.** Connected components smaller than
+   `--mask_filter_min_component_size` voxels (default 1024) are removed.
+
+Each predicted structure is then filtered by sampling the mask at the predicted
+coordinates: polymer residues are removed when their centre atom falls outside
+the mask, and ligands/ions are removed when none of their atoms falls inside.
+The filtering is applied to all saved structures (raw, superimposed, and
+fitted variants) and to the atom-level confidence data; samples whose atoms
+all fall outside the mask are skipped. Confidence summaries used for ranking
+are computed before filtering and are unaffected.
 
 ## License
 
