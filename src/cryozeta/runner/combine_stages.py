@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import string
+from itertools import count
 from pathlib import Path
 
 import numpy as np
@@ -95,8 +96,9 @@ def combine_npz_to_cif(
     # Assign globally unique chain labels
     used: set[str] = set()
     name_gen = _chain_name_generator(used)
+    entity_id_counter = count(1)
 
-    for idx, arr in enumerate(arrays, start=1):
+    for _idx, arr in enumerate(arrays, start=1):
         # Get existing chain labels
         chain_ids = getattr(arr, "chain_id", None)
         if chain_ids is not None:
@@ -118,10 +120,27 @@ def combine_npz_to_cif(
             for f in ["label_asym_id", "chain_id", "auth_asym_id"]:
                 arr.set_annotation(f, np.array([assigned] * n_atoms, dtype=str))
 
-        # Set unique entity ID per stage
-        arr.set_annotation(
-            "label_entity_id", np.array([str(idx)] * arr.coord.shape[0], dtype=str)
-        )
+        # Assign globally unique entity IDs. A stage NPZ may contain several
+        # entities (multi-chain stage), so remap each original entity ID to a
+        # fresh unique one instead of flattening to the stage index.
+        entity_ids = getattr(arr, "label_entity_id", None)
+        if entity_ids is not None:
+            entity_id_vals = np.asarray(entity_ids, dtype=str)
+            entity_map = {
+                str(old): str(next(entity_id_counter))
+                for old in np.unique(entity_id_vals)
+            }
+            new_entity_ids = entity_id_vals.copy()
+            for old, new in entity_map.items():
+                new_entity_ids[new_entity_ids == old] = new
+            arr.set_annotation("label_entity_id", new_entity_ids)
+        else:
+            arr.set_annotation(
+                "label_entity_id",
+                np.array(
+                    [str(next(entity_id_counter))] * arr.coord.shape[0], dtype=str
+                ),
+            )
         arr.set_annotation("copy_id", np.ones(arr.coord.shape[0], dtype=np.int32))
 
     # Concatenate all arrays

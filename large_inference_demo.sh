@@ -33,6 +33,10 @@ Options:
   -r, --registration  Registration method: auto (default), teaser, svd, vesper.
   -i, --input-json    Input JSON file. Default: CryoZeta large example JSON.
   -o, --output-dir    Output directory. Default: PROJECT_ROOT/output/large_examples
+  --max-residues-per-stage N
+                      Maximum total polymer residues per inference stage.
+                      Chains are packed round-robin across entities so one
+                      step models several chains together. Default: 2800
   --checkpoint PATH   CryoZeta checkpoint path.
   --detection-checkpoint PATH
                       CryoZeta detection checkpoint path.
@@ -51,6 +55,9 @@ Examples:
   bash large_inference_demo.sh --example 2            # run entry at index 2
   bash large_inference_demo.sh --example 9ey0         # run entry named 9ey0
   bash large_inference_demo.sh -r teaser              # TEASER++ registration only
+  # Small multi-entity smoke test (9b0l: 805 residues, 5 entities)
+  bash large_inference_demo.sh -i assets/examples/example.json \
+      --max-residues-per-stage 600
   CRYOZETA_CUDA=11 bash large_inference_demo.sh -g 1  # CUDA 11 via env var, GPU 1
 USAGE
 }
@@ -61,10 +68,12 @@ detect_pixi_env() {
         echo "default"; return
     fi
 
-    # Max CUDA version the installed driver supports (major only)
+    # Max CUDA version the installed driver supports (major only).
+    # nvidia-smi headers: old drivers report "CUDA Version:", new drivers
+    # (>= 610) report "CUDA UMD Version:".
     local driver_cuda
     driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n 's/.*CUDA Version: *\([0-9]*\).*/\1/p')
+        | sed -n -E 's/.*CUDA (UMD )?Version: *([0-9]+).*/\2/p' | head -1)
 
     # Highest compute capability among all GPUs
     local compute_cap
@@ -112,6 +121,7 @@ cli_input_json=""
 cli_output_dir=""
 cli_checkpoint=""
 cli_detection_checkpoint=""
+cli_max_residues=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -139,6 +149,9 @@ while [ $# -gt 0 ]; do
         --detection-checkpoint)
             [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
             cli_detection_checkpoint="$2"; shift 2 ;;
+        --max-residues-per-stage)
+            [ -z "${2:-}" ] && { echo "ERROR: $1 requires an argument" >&2; usage; exit 1; }
+            cli_max_residues="$2"; shift 2 ;;
         -h|--help)
             usage; exit 0 ;;
         *)
@@ -200,6 +213,8 @@ detection_checkpoint_path="${cli_detection_checkpoint:-${ASSETS_DIR}/cryozeta-de
 registration_method="${cli_registration}"
 # EM point cropping threshold (Å)
 em_threshold=5.0
+# Maximum total polymer residues per stage (chains packed round-robin across entities)
+max_residues_per_stage="${cli_max_residues:-2800}"
 # Input and output paths
 input_json_path="${cli_input_json:-${ASSETS_DIR}/examples/large_examples.json}"
 dump_dir="${cli_output_dir:-${PROJECT_ROOT}/output/large_examples}"
@@ -217,7 +232,7 @@ echo "==> Project root: ${PROJECT_ROOT}"
 echo "==> Assets dir: ${ASSETS_DIR}"
 gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "unknown")
 gpu_cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader -i "${gpu_ids}" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
-cuda_driver_ver=$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p' || echo "unknown")
+cuda_driver_ver=$(nvidia-smi 2>/dev/null | sed -n -E 's/.*CUDA (UMD )?Version: *([0-9.]+).*/\2/p' | head -1)
 echo "==> GPU ${gpu_ids}: ${gpu_name} (compute capability ${gpu_cc})"
 echo "==> CUDA driver version: ${cuda_driver_ver}"
 
@@ -252,6 +267,7 @@ echo "==> Starting large complex cycle prediction..."
 echo "    Input JSON: ${input_json_path}"
 echo "    Dump directory: ${dump_dir}"
 echo "    EM threshold: ${em_threshold}"
+echo "    Max residues per stage: ${max_residues_per_stage}"
 echo "    Selected entry: ${selected_entry}"
 
 if [ ! -f "${input_json_path}" ]; then
@@ -336,6 +352,7 @@ CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-cycle-predict \
     --sample.N_sample "${N_sample}" \
     --sample.N_step "${N_step}" \
     --model.N_cycle "${N_cycle}" \
+    --max_residues_per_stage "${max_residues_per_stage}" \
     --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \

@@ -186,6 +186,25 @@ bash /path/to/CryoZeta/large_inference_demo.sh --example 9nb5
 
 This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
 
+#### Multi-chain stages
+
+Each inference stage models up to 2800 residues at once. Chains are packed
+round-robin across entities (one copy per entity per pass, longest entity
+first), so a single step can model several chains from distinct entities
+together. Pass `--max-residues-per-stage` to lower the budget and force more
+stages:
+
+```bash
+# Stage-wise split smoke test with the small multi-entity example
+# (9b0l: 805 residues across 5 entities)
+bash /path/to/CryoZeta/large_inference_demo.sh \
+  -i assets/examples/example.json \
+  --max-residues-per-stage 600
+```
+
+With a budget of 600, the 9b0l example runs as two stages: protein + 3 DNA
+strands (558 residues) first, then the RNA strand (247 residues).
+
 ### Prepare Input JSON
 
 The input is a JSON file containing a list of entries. Each entry describes one
