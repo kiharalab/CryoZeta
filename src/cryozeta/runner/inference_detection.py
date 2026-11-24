@@ -369,8 +369,9 @@ class CryoEMInference:
             load_pretrained=True,
             compile=config.compile,
             checkpoint_path=config.detection_checkpoint_path,
+            device=self.device,
         )
-        self.detection_model.to(self.device).to(torch.bfloat16)
+        self.detection_model.to(torch.bfloat16)
 
         logger.info("Models loaded successfully")
 

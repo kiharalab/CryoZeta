@@ -103,7 +103,9 @@ class InferenceRunner:
         os.makedirs(self.dump_dir, exist_ok=True)
 
     def init_model(self) -> None:
-        self.model = CryoZeta(self.configs).to(self.device)
+        with torch.device("meta"):
+            self.model = CryoZeta(self.configs)
+        self.model.to_empty(device=self.device)
 
     def load_checkpoint(self) -> None:
         checkpoint_path = self.configs.load_checkpoint_path

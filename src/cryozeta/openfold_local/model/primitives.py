@@ -87,6 +87,8 @@ def _calculate_fan(linear_weight_shape, fan="fan_in"):
 
 
 def trunc_normal_init_(weights, scale=1.0, fan="fan_in"):
+    if weights.is_meta:
+        return  # SciPy would still generate real samples for a metadata-only tensor.
     shape = weights.shape
     f = _calculate_fan(shape, fan)
     scale = scale / max(1, f)

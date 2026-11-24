@@ -32,13 +32,12 @@ Kihara Lab EM server: https://em.kiharalab.org/algorithm/CryoZeta
     
 ### Run this checkout with the Hugging Face Apptainer image
 
-From the repository root, mount the source into the container and put it first on
-Python’s import path. Both Hugging Face launch scripts inherit these settings.
+From the repository root, mount the source at the package path already used by
+the image. Both Hugging Face launch scripts inherit these settings.
 Pass your downloaded image and assets paths to the launcher as usual.
 
 ```bash
 export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}$PWD/src:/app/CryoZeta/src:ro"
-export APPTAINERENV_PYTHONPATH=/app/CryoZeta/src
 bash /path/to/run_cryozeta.sh --sif /path/to/CryoZeta.sif --gpu 0 input.json output /path/to/assets
 ```
 
