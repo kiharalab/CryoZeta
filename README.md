@@ -101,7 +101,18 @@ The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
 The CUDA 11.8 environment pairs PyTorch 2.4.1 with Triton 3.0.0.
 Set `CRYOZETA_TRITON_GEGLU=0` to benchmark the eager PyTorch implementation.
-When detection uses `torch.compile`, PyTorch manages fusion.
+Large BF16 activations also fuse the cast after GroupNorm with SiLU. This kernel
+takes the element count at runtime so different map sizes share a compiled
+kernel. Set `CRYOZETA_TRITON_CAST_SILU=0` to disable that optimization.
+
+The detector CLI's `--compile` option compiles the whole model with PyTorch.
+To compare output differences, first-call time, and warmed latency across batch
+sizes and window sizes with your checkpoint, run:
+
+```bash
+pixi run python scripts/profile_detection_compile.py assets/cryozeta-detection-v0.0.1.safetensors
+pixi run python scripts/profile_detection_compile.py assets/cryozeta-detection-v0.0.1.safetensors --whole-model
+```
 
 > **Tip:** Run `nvidia-smi` to see both the driver version and the maximum CUDA
 > version your driver supports. The "CUDA Version" shown by `nvidia-smi` is the
