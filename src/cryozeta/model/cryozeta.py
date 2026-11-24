@@ -49,6 +49,25 @@ from .modules.head import DistogramHead, PointNoiseHead, PointResidueClassHead
 from .modules.primitives import LinearNoBias
 
 
+def _count_protein_chain_breaks(ca_coordinate, sequences):
+    counts = torch.zeros(
+        ca_coordinate.shape[0], dtype=torch.long, device=ca_coordinate.device
+    )
+    offset = 0
+    for entry in sequences:
+        kind, chain = next(iter(entry.items()))
+        if kind in ("ligand", "ion"):
+            continue
+        length = len(chain["sequence"])
+        for _ in range(chain["count"]):
+            if kind == "proteinChain":
+                coords = ca_coordinate[:, offset : offset + length]
+                distances = torch.norm(coords[:, 1:] - coords[:, :-1], dim=-1)
+                counts += (distances > 4).sum(dim=-1)
+            offset += length
+    return counts.tolist()
+
+
 class CryoZeta(nn.Module):
     """
     Implements Algorithm 1 [Main Inference Loop] in AF3
@@ -545,36 +564,9 @@ class CryoZeta(nn.Module):
         pdb_id = input_feature_dict["pdb_id"]
         elements = input_feature_dict["atom_array"].element  # element symbols
 
-        sequences_indices = []
-        sequence_type = []
-        current_index = 0
-
-        for seq in input_feature_dict["sequences"]:
-            seq_type = next(iter(seq.keys()))
-            if seq_type in ("ligand", "ion"):
-                continue
-            length = len(seq[seq_type]["sequence"])
-            count = seq[seq_type]["count"]
-            for _i in range(count):
-                sequences_indices.append([current_index, current_index + length])
-                current_index += length
-                sequence_type.append(seq_type)
-
-        num_big_distances = []
-        for n in range(N_sample):
-            big_distance_count = 0
-            for i in range(len(sequences_indices)):
-                indices = sequences_indices[i]
-                chain = ca_coordinate[n, indices[0] : indices[1], :]
-                chain_a = chain[:-1, :]
-                chain_b = chain[1:, :]
-                distances = torch.norm(chain_b - chain_a, dim=1)
-                if sequence_type[i] != "proteinChain":
-                    continue
-                for distance in distances:
-                    if distance > 4:
-                        big_distance_count += 1
-            num_big_distances.append(big_distance_count)
+        num_big_distances = _count_protein_chain_breaks(
+            ca_coordinate, input_feature_dict["sequences"]
+        )
 
         with record_function("model_fitting"):
             coordinate_svd_08, recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08 = (
