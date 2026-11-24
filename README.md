@@ -107,6 +107,11 @@ The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
 PyTorch scaled dot-product attention. Triangle attention still uses
 cuEquivariance when supported. In `cu11`, triangle attention, triangle
 multiplication and pair-biased transformer attention use the PyTorch paths.
+Set `CRYOZETA_TRITON_TRIANGLE=1` to try the streaming Triton triangle-attention
+fallback during eager inference on GPUs with compute capability 8.0 or later.
+It handles FP16/BF16 projected queries with head widths 16, 32 or 64 and
+lengths 32–4096 when the mask and pair bias have the supported layouts.
+cuEquivariance keeps priority where eligible. Other inputs use PyTorch.
 Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 
