@@ -210,61 +210,39 @@ def FitModelPointsTeaser(
 
     all_atom_fitted = all_atom_np.copy()
 
-    for sample_idx in range(n_sample):
-        # Get query points (predicted CA coordinates for this sample)
-        query_points = ca_coordinate_np[sample_idx]
-        logger.info(f"Sample {sample_idx}: Query points: {len(query_points)}")
+    if n_sample == 0:
+        return None, recall_score_list, ccc_mask_list, ccc_box_list
 
-        # Create point clouds and estimate normals
-        logger.info(f"Sample {sample_idx}: Estimating normals for reference...")
-        ref_pcd = o3d.geometry.PointCloud()
-        ref_pcd.points = o3d.utility.Vector3dVector(ref_points)
-        ref_pcd.estimate_normals(
+    def describe(points):
+        cloud = o3d.geometry.PointCloud()
+        cloud.points = o3d.utility.Vector3dVector(points)
+        cloud.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(
                 radius=r_for_normal, max_nn=nn_for_normal
             )
         )
-
-        logger.info(f"Sample {sample_idx}: Estimating normals for query...")
-        query_pcd = o3d.geometry.PointCloud()
-        query_pcd.points = o3d.utility.Vector3dVector(query_points)
-        query_pcd.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(
-                radius=r_for_normal, max_nn=nn_for_normal
-            )
-        )
-
-        # Stage 1: Compute descriptors and run TEASER++
-        logger.info(
-            f"Sample {sample_idx}: Computing {desc_type} descriptors for reference..."
-        )
-        ref_descriptors = compute_descriptors(
-            np.asarray(ref_pcd.points),
-            np.asarray(ref_pcd.normals),
+        return compute_descriptors(
+            np.asarray(cloud.points),
+            np.asarray(cloud.normals),
             radius=desc_r,
             n_scales=desc_scales,
             descriptor_choice=desc_type,
             min_neighborhood_size=min_neighborhood_size,
             phi=phi,
             rho=rho,
-            n_procs=32,
+            # Inference already has CUDA and native thread pools initialized.
+            # Compute SHOT in this process to avoid forking that state.
+            n_procs=1,
         )
-        logger.info(f"Sample {sample_idx}:   Descriptor shape: {ref_descriptors.shape}")
 
+    logger.info(f"Computing {desc_type} descriptors for reference...")
+    ref_descriptors = describe(ref_points)
+    for sample_idx in range(n_sample):
+        query_points = ca_coordinate_np[sample_idx]
         logger.info(
             f"Sample {sample_idx}: Computing {desc_type} descriptors for query..."
         )
-        query_descriptors = compute_descriptors(
-            np.asarray(query_pcd.points),
-            np.asarray(query_pcd.normals),
-            radius=desc_r,
-            n_scales=desc_scales,
-            descriptor_choice=desc_type,
-            min_neighborhood_size=min_neighborhood_size,
-            phi=phi,
-            rho=rho,
-            n_procs=32,
-        )
+        query_descriptors = describe(query_points)
         logger.info(
             f"Sample {sample_idx}:   Descriptor shape: {query_descriptors.shape}"
         )
