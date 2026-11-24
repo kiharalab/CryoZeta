@@ -394,8 +394,7 @@ def calculate_ccc(target_map: MapObject, simu_map: MapObject) -> float:
     """
     target_bin = target_map.grid_data > 0
     simu_bin = simu_map.grid_data > 0
-    mask_array = (target_bin * simu_bin) > 0
-    if np.allclose(mask_array, 0):
+    if not np.any(target_bin & simu_bin):
         return -1.0
     target_mask = target_bin * target_map.grid_data
     simu_mask = simu_bin * simu_map.grid_data
