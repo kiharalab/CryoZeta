@@ -26,7 +26,7 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from loguru import logger
 from scipy.spatial import KDTree
 
-from cryozeta.em.strucblur import calculate_ccc_ovr
+from cryozeta.em.strucblur import MapScorer
 from cryozeta.model.modules.calc_descriptors import compute_descriptors
 
 # =============================================================================
@@ -194,6 +194,7 @@ def FitModelPointsTeaser(
     Returns:
         Transformed all_atom coordinates, or None if fitting failed
     """
+    score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -386,13 +387,7 @@ def FitModelPointsTeaser(
             all_atom_np[sample_idx] @ combined_transform[:3, :3].T
             + combined_transform[:3, 3]
         )
-        ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-            all_atom_fitted[sample_idx],
-            elements,
-            map_path=map_path,
-            resolution=resolution,
-            contour_level=contour_level,
-        )
+        ccc_mask, _, ccc_box, _ = score_map(all_atom_fitted[sample_idx], elements)
         ccc_mask_list[sample_idx] = ccc_mask
         ccc_box_list[sample_idx] = ccc_box
 
@@ -632,6 +627,7 @@ def FitModelPoints(
     resolution: float | None = None,
     contour_level: float | None = None,
 ):
+    score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -675,13 +671,7 @@ def FitModelPoints(
         recall = calculate_query_recall(
             all_support_points, ca_coordinate_fitted[i], distance_threshold=3.0
         )
-        ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-            all_atom_fitted[i],
-            elements,
-            map_path=map_path,
-            resolution=resolution,
-            contour_level=contour_level,
-        )
+        ccc_mask, _, ccc_box, _ = score_map(all_atom_fitted[i], elements)
         recall_score_list[i] = recall
         ccc_mask_list[i] = ccc_mask
         ccc_box_list[i] = ccc_box
@@ -768,6 +758,7 @@ def FitModelVESPER(
 
     from cryozeta.data.utils import save_atoms_to_cif
 
+    score_map = MapScorer(map_path, resolution_map, contour_level_map)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -891,12 +882,8 @@ def FitModelVESPER(
                 recall_score_list[sample_idx] = calculate_query_recall(
                     ref_points, query_points, distance_threshold=3.0
                 )
-                ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-                    all_atom_fitted[sample_idx],
-                    atom_array.element,
-                    map_path=map_path,
-                    resolution=resolution_map,
-                    contour_level=contour_level_map,
+                ccc_mask, _, ccc_box, _ = score_map(
+                    all_atom_fitted[sample_idx], atom_array.element
                 )
                 ccc_mask_list[sample_idx] = ccc_mask
                 ccc_box_list[sample_idx] = ccc_box

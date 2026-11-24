@@ -430,44 +430,57 @@ def calculate_ccc_ovr(
     Raises:
         ValueError: If resolution or contour level is not provided.
     """
-    if resolution is None:
-        raise ValueError("resolution must be provided")
-    if contour_level is None:
-        raise ValueError("contour_level must be provided")
+    return MapScorer(map_path, resolution, contour_level)(coordinates, elements)
 
-    mrc_obj = parse_mrc(map_path)
 
-    # Create mask around the full structure
-    mask_obj = extended_mask_real_space(
-        atom_coords=coordinates, mrc_obj=mrc_obj, mask_radius=2.0
-    )
+class MapScorer:
+    """Reuse one thresholded experimental map across fitted samples."""
 
-    # Apply contour threshold
-    mrc_obj.grid_data[mrc_obj.grid_data <= contour_level] = 0
+    def __init__(self, map_path, resolution, contour_level):
+        self._map_path = map_path
+        self._resolution = resolution
+        self._contour_level = contour_level
+        self._map = None
 
-    # Masked map (for cc_mask)
-    masked_obj = MapObject(
-        grid_data=mrc_obj.grid_data * mask_obj.grid_data,
-        voxel_size=mrc_obj.voxel_size,
-        global_origin=mrc_obj.global_origin,
-    )
+    def __call__(self, coordinates, elements):
+        if self._resolution is None:
+            raise ValueError("resolution must be provided")
+        if self._contour_level is None:
+            raise ValueError("contour_level must be provided")
+        if self._map is None:
+            prepared = parse_mrc(self._map_path)
+            prepared.grid_data[prepared.grid_data <= self._contour_level] = 0
+            self._map = prepared
+        mrc_obj = self._map
 
-    # Blur with all atom masses
-    blurred_all = gaussian_blur_real_space_vc(
-        atom_coords=coordinates,
-        elements=elements,
-        map_obj=masked_obj,
-        resolution=resolution,
-        protein_only=False,
-    )
+        # Create mask around the full structure
+        mask_obj = extended_mask_real_space(
+            atom_coords=coordinates, mrc_obj=mrc_obj, mask_radius=2.0
+        )
 
-    # CC_mask and OVR_mask (with mask)
-    ccc_mask = calculate_ccc(masked_obj, blurred_all)
-    ovr_mask = calculate_ovr(masked_obj, blurred_all)
-    logger.info(f"All Atoms CC_mask: {ccc_mask:.3f}, OVR_mask: {ovr_mask:.3f}")
+        # Masked map (for cc_mask)
+        masked_obj = MapObject(
+            grid_data=mrc_obj.grid_data * mask_obj.grid_data,
+            voxel_size=mrc_obj.voxel_size,
+            global_origin=mrc_obj.global_origin,
+        )
 
-    # CC_box and OVR_box (without mask)
-    ccc_box = calculate_ccc(mrc_obj, blurred_all)
-    ovr_box = calculate_ovr(mrc_obj, blurred_all)
-    logger.info(f"All Atoms CC_box: {ccc_box:.3f}, OVR_box: {ovr_box:.3f}")
-    return ccc_mask, ovr_mask, ccc_box, ovr_box
+        # Blur with all atom masses
+        blurred_all = gaussian_blur_real_space_vc(
+            atom_coords=coordinates,
+            elements=elements,
+            map_obj=masked_obj,
+            resolution=self._resolution,
+            protein_only=False,
+        )
+
+        # CC_mask and OVR_mask (with mask)
+        ccc_mask = calculate_ccc(masked_obj, blurred_all)
+        ovr_mask = calculate_ovr(masked_obj, blurred_all)
+        logger.info(f"All Atoms CC_mask: {ccc_mask:.3f}, OVR_mask: {ovr_mask:.3f}")
+
+        # CC_box and OVR_box (without mask)
+        ccc_box = calculate_ccc(mrc_obj, blurred_all)
+        ovr_box = calculate_ovr(mrc_obj, blurred_all)
+        logger.info(f"All Atoms CC_box: {ccc_box:.3f}, OVR_box: {ovr_box:.3f}")
+        return ccc_mask, ovr_mask, ccc_box, ovr_box
