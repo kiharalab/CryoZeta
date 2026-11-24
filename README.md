@@ -97,6 +97,12 @@ The auto-detection logic combines both:
 | >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | >= 2.7 |
 | < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | >= 2.0, < 2.5 |
 
+The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
+during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
+The CUDA 11.8 environment pairs PyTorch 2.4.1 with Triton 3.0.0.
+Set `CRYOZETA_TRITON_GEGLU=0` to benchmark the eager PyTorch implementation.
+When detection uses `torch.compile`, PyTorch manages fusion.
+
 > **Tip:** Run `nvidia-smi` to see both the driver version and the maximum CUDA
 > version your driver supports. The "CUDA Version" shown by `nvidia-smi` is the
 > **ceiling** -- you can install any CUDA toolkit up to that version.

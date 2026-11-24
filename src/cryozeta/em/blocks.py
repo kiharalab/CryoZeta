@@ -18,6 +18,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+try:
+    from .triton_geglu import try_geglu
+except ImportError:
+    try_geglu = None
+
 
 def get_emb(sin_inp):
     """
@@ -200,7 +205,17 @@ class GeGLU(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # Get $xW + b$ and $xV + c$
-        x, gate = self.proj(x).chunk(2, dim=-1)
+        packed = self.proj(x)
+        if (
+            try_geglu is not None
+            and packed.is_cuda
+            and not torch.is_grad_enabled()
+            and not torch.compiler.is_compiling()
+        ):
+            fused = try_geglu(packed)
+            if fused is not None:
+                return fused
+        x, gate = packed.chunk(2, dim=-1)
         # $\text{GeGLU}(x) = (xW + b) * \text{GELU}(xV + c)$
         return x * self.gelu(gate)
 

@@ -61,6 +61,9 @@ pytorch-gpu = ">=2.0.0,<2.5.0"
 gxx = ">=11,<12"
 gcc = ">=11,<12"
 
+[tool.pixi.feature.cu11.pypi-dependencies]
+triton = "==3.0.0"
+
 [tool.pixi.feature.cu11.system-requirements]
 cuda = "11.0"
 
