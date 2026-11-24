@@ -133,11 +133,16 @@ class PositionalEncoding3D(nn.Module):
         if len(tensor.shape) != 5:
             raise RuntimeError("The input tensor has to be 5d!")
 
-        if self.cached_penc is not None and self.cached_penc.shape == tensor.shape:
-            return self.cached_penc
+        if (
+            self.cached_penc is not None
+            and self.cached_penc.shape[1:] == tensor.shape[1:]
+            and self.cached_penc.dtype == tensor.dtype
+            and self.cached_penc.device == tensor.device
+        ):
+            return self.cached_penc.expand_as(tensor)
 
         self.cached_penc = None
-        batch_size, x, y, z, orig_ch = tensor.shape
+        _, x, y, z, orig_ch = tensor.shape
         pos_x = torch.arange(x, device=tensor.device, dtype=self.inv_freq.dtype)
         pos_y = torch.arange(y, device=tensor.device, dtype=self.inv_freq.dtype)
         pos_z = torch.arange(z, device=tensor.device, dtype=self.inv_freq.dtype)
@@ -156,8 +161,8 @@ class PositionalEncoding3D(nn.Module):
         emb[:, :, :, self.channels : 2 * self.channels] = emb_y
         emb[:, :, :, 2 * self.channels :] = emb_z
 
-        self.cached_penc = emb[None, :, :, :, :orig_ch].repeat(batch_size, 1, 1, 1, 1)
-        return self.cached_penc
+        self.cached_penc = emb[None, :, :, :, :orig_ch]
+        return self.cached_penc.expand_as(tensor)
 
 
 class FeedForward(nn.Module):

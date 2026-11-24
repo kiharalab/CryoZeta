@@ -314,6 +314,11 @@ def post_process(
         :,
     ]
 
+    # The detector shares four nucleotide channels between DNA and RNA.
+    # Duplicate them only for selected points. Older callers supply all 28.
+    if res_features.shape[-1] == 24:
+        res_features = torch.cat([res_features, res_features[:, 20:24]], dim=-1)
+
     # Calculate interpolated confidence with optional random sampling
     num_total_points = len(main_atom_indices)
     if disable_interpolation:
@@ -494,13 +499,6 @@ class CryoEMInference:
             atom_prob = detection_output[:, :9, ...]  # (1, 9, D, H, W)
             residue_prob = detection_output[:, 9:, ...]  # (1, 25, D, H, W)
 
-            # Residue rearrangement: 20 AAs + 4 DNA + 4 RNA (duplicate DRNA logits)
-            aa_probs = residue_prob[0, 1:21, ...]
-            drna_probs = residue_prob[0, 21:25, ...]
-            residue_features = torch.cat(
-                [aa_probs, drna_probs, drna_probs], dim=0
-            )  # (28, D, H, W)
-
             prot_ca_proba = (
                 atom_prob[0, 2, ...]
                 * spatial_mask
@@ -521,7 +519,6 @@ class CryoEMInference:
                 * spatial_mask
                 * (0.0 if self.config.no_dna_rna else 1.0)
             )
-            residue_prob = residue_prob[0, ...] * spatial_mask.unsqueeze(0)
 
             # Save MRC files
             if self.config.save_map_predictions:
@@ -557,7 +554,7 @@ class CryoEMInference:
                 logger.info(f"Saved {emdb_id}_rdna_sg_prb.mrc")
 
                 np.save(
-                    output_dir / f"{emdb_id}_residue.npy", residue_prob.cpu().numpy()
+                    output_dir / f"{emdb_id}_residue.npy", (residue_prob[0] * spatial_mask).numpy()
                 )
 
             maps_dict = {
@@ -565,8 +562,7 @@ class CryoEMInference:
                 "rdna_c1p_map": rdna_c1p_proba.cpu(),
                 "prot_bb_map": prot_bb_proba.cpu(),
                 "rdna_sugar_map": rdna_sugar_proba.cpu(),
-                "detection_map": residue_prob.cpu(),
-                "residue_features": residue_features.cpu(),
+                "residue_features": residue_prob[0, 1:],
             }
 
             t3 = time.time()
