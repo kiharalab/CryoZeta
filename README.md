@@ -105,7 +105,9 @@ The auto-detection logic combines both:
 
 The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
 PyTorch scaled dot-product attention. Triangle attention still uses
-cuEquivariance when supported. Older launchers can still pass
+cuEquivariance when supported. In `cu11`, triangle attention, triangle
+multiplication and pair-biased transformer attention use the PyTorch paths.
+Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections

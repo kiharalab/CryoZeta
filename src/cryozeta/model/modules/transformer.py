@@ -20,7 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 _cueq_attn_pair_bias_available = (
-    importlib.util.find_spec("cuequivariance_torch") is not None
+    importlib.util.find_spec("cuequivariance_ops_torch") is not None
 )
 if _cueq_attn_pair_bias_available:
     try:
