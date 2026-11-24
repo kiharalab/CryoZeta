@@ -98,6 +98,19 @@ class OuterProductMean(nn.Module):
 
         return outer
 
+    def _project_by_sequence(self, m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # Write projections directly in contraction order [N_res, N_seq, H].
+        # Only one slice of normalized input is needed at a time.
+        n_seq, n_res, _ = m.shape
+        a = m.new_empty(n_res, n_seq, self.c_hidden)
+        b = torch.empty_like(a)
+        for start in range(0, n_seq, 32):
+            end = min(start + 32, n_seq)
+            normalized = self.layer_norm(m[start:end])
+            a[:, start:end] = self.linear_1(normalized).transpose(0, 1)
+            b[:, start:end] = self.linear_2(normalized).transpose(0, 1)
+        return a, b
+
     def _forward(
         self,
         m: torch.Tensor,
@@ -133,25 +146,36 @@ class OuterProductMean(nn.Module):
         if mask is None and not unmasked:
             mask = m.new_ones(m.shape[:-1])
 
-        # [*, N_seq, N_res, C_m]
-        ln = self.layer_norm(m)
+        if (
+            unmasked
+            and m.ndim == 3
+            and 1024 <= m.shape[0]
+            and 1024 <= m.shape[1] <= 4096
+            and self.c_m == 256
+            and self.c_hidden == 128
+            and torch.cuda.get_device_capability(m.device) == (12, 0)
+        ):
+            a, b = self._project_by_sequence(m)
+        else:
+            # [*, N_seq, N_res, C_m]
+            ln = self.layer_norm(m)
 
-        # [*, N_seq, N_res, C]
-        if mask is not None:
-            mask = mask.unsqueeze(-1)
-        a = self.linear_1(ln)
-        if mask is not None:
-            a = a * mask
+            # [*, N_seq, N_res, C]
+            if mask is not None:
+                mask = mask.unsqueeze(-1)
+            a = self.linear_1(ln)
+            if mask is not None:
+                a = a * mask
 
-        b = self.linear_2(ln)
-        if mask is not None:
-            b = b * mask
+            b = self.linear_2(ln)
+            if mask is not None:
+                b = b * mask
 
-        del ln
+            del ln
 
-        # Transpose to [*, N_res, N_seq, C]
-        a = a.transpose(-2, -3).contiguous()
-        b = b.transpose(-2, -3).contiguous()
+            # Transpose to [*, N_res, N_seq, C]
+            a = a.transpose(-2, -3).contiguous()
+            b = b.transpose(-2, -3).contiguous()
 
         # Norm: [*, N_res, N_res]
         if mask is None:
