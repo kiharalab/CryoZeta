@@ -15,20 +15,10 @@
 import importlib
 import math
 import os
+import sys
 from collections.abc import Callable
 
 import numpy as np
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-ds4s_is_installed = (
-    deepspeed_is_installed
-    and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
-)
-if deepspeed_is_installed:
-    import deepspeed
-
-if ds4s_is_installed:
-    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
@@ -44,11 +34,6 @@ fa_is_installed = importlib.util.find_spec("flash_attn") is not None
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
-
-fastln_is_installed = os.getenv("LAYERNORM_TYPE", None) == "fast_layernorm"
-if fastln_is_installed:
-    # LayerNorm is a time bottomneck, so we use a custom implementation.
-    from cryozeta.model.layer_norm.layer_norm import FusedLayerNorm
 
 import torch
 import torch.nn as nn
@@ -206,8 +191,9 @@ class Linear(nn.Linear):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
+        deepspeed = sys.modules.get("deepspeed")
         deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+            deepspeed is not None and deepspeed.comm.comm.is_initialized()
         )
         if self.precision is not None:
             with torch.amp.autocast(device_type="cuda", enabled=False):
@@ -242,10 +228,14 @@ class OpenFoldLayerNorm(nn.Module):
 
     def forward(self, x):
         d = x.dtype
+        deepspeed = sys.modules.get("deepspeed")
         deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+            deepspeed is not None and deepspeed.comm.comm.is_initialized()
         )
-        if d is torch.bfloat16 and not deepspeed_is_initialized:
+        preserve_dtype = d is torch.bfloat16 or (
+            d is torch.float16 and x.is_cuda and not torch.is_grad_enabled()
+        )
+        if preserve_dtype and not deepspeed_is_initialized:
             with torch.amp.autocast(device_type="cuda", enabled=False):
                 out = nn.functional.layer_norm(
                     x,
@@ -268,12 +258,10 @@ class OpenFoldLayerNorm(nn.Module):
 
 # Keep the function name for code simplicity
 def LayerNorm(c_in, eps: float = 1e-5):
-    # if specify "fast_layernorm" and fastln_is_installed, use the FusedLayerNorm,
-    # Otherwise, OpenFoldLayerNorm is used!
-    if fastln_is_installed:
-        # print("use fast layernorm")
+    if os.getenv("LAYERNORM_TYPE") == "fast_layernorm":
+        from cryozeta.model.layer_norm.layer_norm import FusedLayerNorm
+
         return FusedLayerNorm(c_in, eps)
-    # print("use openfold layernorm")
     return OpenFoldLayerNorm(c_in, eps)
 
 
@@ -284,8 +272,9 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     type bfloat16
     """
     d = t.dtype
+    deepspeed = sys.modules.get("deepspeed")
     deepspeed_is_initialized = (
-        deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        deepspeed is not None and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
         with torch.amp.autocast(device_type="cuda", enabled=False):
@@ -775,11 +764,7 @@ def _deepspeed_evo_attn(
             List of biases that broadcast to [*, H, Q, K]
     """
 
-    if not ds4s_is_installed:
-        raise ValueError(
-            "_deepspeed_evo_attn requires that DeepSpeed be installed "
-            "and that the deepspeed.ops.deepspeed4science package exists"
-        )
+    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
     def reshape_dims(x):
         no_batch_dims = len(x.shape[:-3])
