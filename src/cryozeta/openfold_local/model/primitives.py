@@ -386,6 +386,34 @@ def _bounded_attention(q, k, v, biases, *, use_sdpa=False):
     # Allow space for FP32 logits, probabilities and softmax workspace.
     budget = 128 * 1024**2
     bytes_per_query = math.prod(q.shape[:-2]) * k.shape[-2] * 12
+    # The budget bounds materialized logits. Efficient SDPA streams them and
+    # can process a complete row batch without the quadratic score buffer.
+    if (
+        use_sdpa
+        and q.is_cuda
+        and q.ndim == 4
+        and 0 < q.shape[0] <= 256
+        and q.dtype in (torch.float16, torch.bfloat16)
+        and len(biases) == 1
+        and biases[0].shape == (1, q.shape[1], q.shape[-2], k.shape[-2])
+        and biases[0].stride(-1) == 1
+        and biases[0].stride(-2) % 8 == 0
+        and 512 <= q.shape[-2] <= 4096
+        and k.shape[-2] == q.shape[-2]
+        and bytes_per_query * q.shape[-2] > budget
+        and not torch.is_grad_enabled()
+        and not torch.compiler.is_compiling()
+    ):
+        choose_backend = getattr(torch, "_fused_sdp_choice", None)
+        if choose_backend is not None:
+            try:
+                backend = choose_backend(q, k, v, biases[0], scale=1.0)
+            except (NotImplementedError, RuntimeError, TypeError):
+                backend = None
+            if backend == int(torch.nn.attention.SDPBackend.EFFICIENT_ATTENTION):
+                return nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=biases[0], scale=1.0
+                )
     if bytes_per_query > budget and q.ndim > 3 and q.shape[0]:
         # Index broadcast batch dimensions as views, including shared biases.
         out = torch.empty_like(q)

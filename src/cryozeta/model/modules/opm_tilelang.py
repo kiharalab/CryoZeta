@@ -46,7 +46,7 @@ def opm_fwd_kernel(
     6. W[Z, block_c*H] tile staged in shared memory for projection phase.
     7. Z-tiled projection: process block_z Z values per W tile load.
     """
-    Bat, S, N, C, Z, H = batch, seq_len, length, c_m, c_z, c_hidden
+    Bat, S, N, Z, H = batch, seq_len, length, c_z, c_hidden
     H_pad = H + 1  # Pad H dimension to reduce shared memory bank conflicts
 
     # N and S are guaranteed to be multiples of block_N and block_S (padded in wrapper)
@@ -277,9 +277,20 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
         is_3d = True
         a, b, norm = a.unsqueeze(0), b.unsqueeze(0), norm.unsqueeze(0)
 
-    B, N, S, H = a.shape
+    B, N, _, H = a.shape
     Z = weight.shape[0]
     out = torch.empty(B, N, N, Z, device=a.device, dtype=a.dtype)
+
+    if (
+        a.is_cuda
+        and not torch.is_grad_enabled()
+        and a.dtype in (torch.float16, torch.bfloat16)
+        and N >= 512
+        and N > chunk_size
+    ):
+        # einsum flattens N and H for its right-hand GEMM operand. Store them
+        # adjacently once so each row chunk can reuse that same matrix view.
+        b = b.transpose(1, 2).contiguous().transpose(1, 2)
 
     for n1 in range(0, N, chunk_size):
         n1_end = min(n1 + chunk_size, N)
