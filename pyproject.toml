@@ -50,7 +50,6 @@ numpy = "<2.0.0"
 boost = ">=1.82"
 libboost-devel = ">=1.82"
 eigen = "3.4.*"
-cutlass = "*"
 pybind11 = ">=2.12"
 
 [tool.pixi.feature.cu11.dependencies]
@@ -111,7 +110,6 @@ cuda = "13.0"
 cryozeta = { path = ".", editable = true }
 biopython = ">=1.85"
 biotite = "==1.0.1"
-deepspeed = ">=0.16.7"
 dm-tree = ">=0.1.9"
 einops = ">=0.8.1"
 gemmi = ">=0.7.5"

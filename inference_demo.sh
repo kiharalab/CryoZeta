@@ -126,7 +126,6 @@ else
     PIXI_ENV="$(detect_pixi_env "$gpu_ids")"
 fi
 
-export LAYERNORM_TYPE="${LAYERNORM_TYPE:-torch}"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
@@ -139,19 +138,15 @@ fi
 
 PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --no-install --frozen -e "${PIXI_ENV}")
 
-# Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
-# finds the pixi-managed nvcc (and matching host-compiler compatibility)
-# instead of a system-installed CUDA toolkit.
+# Use the CUDA toolkit from the selected Pixi environment.
 PIXI_PREFIX="$("${PIXI_RUN[@]}" bash -c 'echo $CONDA_PREFIX')"
 export CUDA_HOME="${PIXI_PREFIX}"
-export CUTLASS_PATH="${CUTLASS_PATH:-${PIXI_PREFIX}}"
 
 # ── Inference parameters ──────────────────────────────────────────────────────
 N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention="${USE_DEEPSPEED_EVO_ATTENTION:-false}"
 use_cuequivariance=true  # Master toggle for all cuEquivariance modules
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
@@ -220,7 +215,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --em_file_dir "${dump_dir}" \
     --dump_dir "${dump_dir}" \
     --input_json_path "${input_json_path}" \
-    --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
@@ -241,7 +235,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --dump_dir "${dump_dir}" \
     --em_file_dir "${dump_dir}" \
     --input_json_path "${input_json_path}" \
-    --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \

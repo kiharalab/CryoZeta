@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-export LAYERNORM_TYPE="${LAYERNORM_TYPE:-torch}"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export CUDA_VISIBLE_DEVICES=1  # <-- adjust based on nvidia-smi
 
@@ -27,7 +26,6 @@ PIXI_ENV=$(detect_pixi_env)
 echo "==> Using pixi environment: ${PIXI_ENV}"
 
 CONDA_PREFIX="$(pwd)/.pixi/envs/${PIXI_ENV}"
-export CUTLASS_PATH="${CUTLASS_PATH:-${CONDA_PREFIX}}"
 
 if [ -x "${CONDA_PREFIX}/bin/ptxas" ]; then
     export TRITON_PTXAS_PATH="${CONDA_PREFIX}/bin/ptxas"
@@ -48,7 +46,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention="${USE_DEEPSPEED_EVO_ATTENTION:-false}"
 use_cuequivariance=true
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
@@ -96,7 +93,6 @@ nsys profile \
         --em_file_dir "${OUTPUT_DIR}" \
         --dump_dir "${OUTPUT_DIR}" \
         --input_json_path ${input_json_path} \
-        --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \

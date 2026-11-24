@@ -53,8 +53,7 @@ Example:
     --seeds 101 \
     --sample.N_sample 2 \
     --sample.N_step 20 \
-    --model.N_cycle 10 \
-    --use_deepspeed_evo_attention true
+    --model.N_cycle 10
 
 Example with VESPER registration:
   uv run cryozeta-cycle-predict \
@@ -67,8 +66,6 @@ Example with VESPER registration:
     --vesper_resolution 3.0
 
 Notes:
-  - If --use_deepspeed_evo_attention true, ensure CUTLASS_PATH is set.
-  - Optionally set LAYERNORM_TYPE=fast_layernorm to compile kernels on demand.
   - VESPER requires --vesper_map_path and --vesper_contour_level when using --vesper_only.
   - VESPER uses the original MRC map directly instead of support points.
 """
@@ -249,7 +246,6 @@ def build_arg_str(
     checkpoint: Path,
     dump_dir: Path,
     input_json: Path,
-    use_deepspeed_evo_attention: str,
     use_cuequivariance_attention: str,
     use_cuequivariance_multiplicative_update: str,
     use_cuequivariance_attention_pair_bias: str,
@@ -264,7 +260,6 @@ def build_arg_str(
     parts += ["--load_checkpoint_path", str(checkpoint)]
     parts += ["--dump_dir", str(dump_dir)]
     parts += ["--input_json_path", str(input_json)]
-    parts += ["--use_deepspeed_evo_attention", str(use_deepspeed_evo_attention)]
     parts += ["--use_cuequivariance_attention", str(use_cuequivariance_attention)]
     parts += ["--use_cuequivariance_multiplicative_update", str(use_cuequivariance_multiplicative_update)]
     parts += ["--use_cuequivariance_attention_pair_bias", str(use_cuequivariance_attention_pair_bias)]
@@ -295,7 +290,6 @@ def run_stage(
         checkpoint=Path(args.load_checkpoint_path).expanduser().resolve(),
         dump_dir=dump_dir,
         input_json=temp_json,
-        use_deepspeed_evo_attention=str(args.use_deepspeed_evo_attention).lower(),
         use_cuequivariance_attention=str(args.use_cuequivariance_attention).lower(),
         use_cuequivariance_multiplicative_update=str(args.use_cuequivariance_multiplicative_update).lower(),
         use_cuequivariance_attention_pair_bias=str(args.use_cuequivariance_attention_pair_bias).lower(),

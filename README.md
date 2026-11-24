@@ -105,12 +105,8 @@ The auto-detection logic combines both:
 
 The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
 PyTorch scaled dot-product attention. Triangle attention still uses
-cuEquivariance when supported. To request the legacy implementations, set
-`LAYERNORM_TYPE=fast_layernorm` or `USE_DEEPSPEED_EVO_ATTENTION=true` before
-running the demo. DS4Sci cold-build and BF16 forward have been tested in the
-CUDA 12.8 Pixi environment (`-e default`) on RTX PRO 6000 Blackwell. The
-locked DeepSpeed builder selects C++17 for CUDA 13.2 while its PyTorch
-headers require C++20. Use the native backend in `cu13`.
+cuEquivariance when supported. Older launchers can still pass
+`--use_deepspeed_evo_attention`; inference uses the native backend.
 
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
@@ -185,24 +181,6 @@ This runs the full CryoZeta pipeline on the bundled example (`assets/examples/ex
 After setup, `inference_demo.sh`, `large_inference_demo.sh`, and the
 `cryozeta-*` entry points can be run both inside the CryoZeta repository root
 and from outside it.
-
-### Optional Runtime Cache Location
-
-CryoZeta compiles a small CUDA layer-normalization extension the first time it
-is needed. For normal user installs, no extra setup is required; PyTorch will
-use its default user-writable extension cache.
-
-For shared or read-only installations, such as centrally managed HPC/module
-installs, set `CRYOZETA_TORCH_EXTENSIONS_DIR` to a writable directory before
-running CryoZeta:
-
-```bash
-export CRYOZETA_TORCH_EXTENSIONS_DIR=/path/to/writable/cache
-bash /path/to/CryoZeta/inference_demo.sh
-```
-
-If your compiler reports `No space left on device` under `/tmp`, set `TMPDIR`
-to a writable scratch directory as well.
 
 ### Large Structure Inference
 
@@ -403,7 +381,6 @@ CryoZeta builds upon and is inspired by several excellent open-source projects:
 
 - **[Protenix](https://github.com/bytedance/Protenix)** (ByteDance) -- An open-source biomolecular structure prediction framework. CryoZeta's structure prediction pipeline is built upon Protenix.
 - **[OpenFold](https://github.com/aqlaboratory/openfold)** (Ahdritz et al.) -- An open-source protein structure prediction framework. CryoZeta reuses and adapts several OpenFold modules (e.g. layer normalization, tensor utilities). Our local copy is based on commit [`bb3f51`](https://github.com/aqlaboratory/openfold/commit/bb3f51e5a2cf2d5e3b709fe8f7d7a083c870222e).
-- **[CUTLASS](https://github.com/NVIDIA/cutlass)** (NVIDIA) -- CUDA Templates for Linear Algebra Subroutines and Solvers, used for DeepSpeed DS4Sci EvoformerAttention kernels.
 - **[TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus)** (MIT SPARK Lab) -- A fast and certifiably robust point cloud registration library, used for superimposing predicted structures onto cryo-EM maps.
 - **[VESPER](https://github.com/kiharalab/VESPER_CUDA)** (Kihara Lab) -- A GPU-accelerated cryo-EM map comparison and fitting tool.
 

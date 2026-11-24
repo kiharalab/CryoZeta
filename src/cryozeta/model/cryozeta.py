@@ -187,13 +187,6 @@ class CryoZeta(nn.Module):
         Returns:
             Tuple[torch.Tensor, ...]: s_inputs, s, z
         """
-        N_token = input_feature_dict["residue_index"].shape[-1]
-        if N_token <= 16:
-            # Deepspeed_evo_attention do not support token <= 16
-            deepspeed_evo_attention_condition_satisfy = False
-        else:
-            deepspeed_evo_attention_condition_satisfy = True
-
         # Line 1-5
         with record_function("input_embedding"):
             s_inputs, pz_inputs, p_inputs = self.input_embedder(
@@ -240,8 +233,6 @@ class CryoZeta(nn.Module):
                                 input_feature_dict,
                                 z,
                                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                                and deepspeed_evo_attention_condition_satisfy,
                                 use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                                 use_lma=self.configs.use_lma,
                                 inplace_safe=inplace_safe,
@@ -254,8 +245,6 @@ class CryoZeta(nn.Module):
                             s_inputs,
                             pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                            use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                            and deepspeed_evo_attention_condition_satisfy,
                             use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                             use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
@@ -269,8 +258,6 @@ class CryoZeta(nn.Module):
                                 input_feature_dict,
                                 z,
                                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                                and deepspeed_evo_attention_condition_satisfy,
                                 use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                                 use_lma=self.configs.use_lma,
                                 inplace_safe=inplace_safe,
@@ -283,8 +270,6 @@ class CryoZeta(nn.Module):
                             s_inputs,
                             pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                            use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                            and deepspeed_evo_attention_condition_satisfy,
                             use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                             use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
@@ -303,8 +288,6 @@ class CryoZeta(nn.Module):
                         p,
                         pair_mask=input_feature_dict["pair_mask"],
                         use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                        use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                        and deepspeed_evo_attention_condition_satisfy,
                         use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                         use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                         use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
@@ -476,10 +459,6 @@ class CryoZeta(nn.Module):
             self.point_noise_head.to(_gpu)
 
         N_token = input_feature_dict["residue_index"].shape[-1]
-        if N_token <= 16:
-            deepspeed_evo_attention_condition_satisfy = False
-        else:
-            deepspeed_evo_attention_condition_satisfy = True
 
         log_dict = {}
         pred_dict = {}
@@ -816,8 +795,6 @@ class CryoZeta(nn.Module):
                 pair_mask=None,
                 x_pred_coords=pred_dict["coordinate"],
                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=self.configs.use_deepspeed_evo_attention
-                and deepspeed_evo_attention_condition_satisfy,
                 use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                 use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                 use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,

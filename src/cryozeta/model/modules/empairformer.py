@@ -122,7 +122,7 @@ class PairformerBlock(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.
@@ -324,7 +324,7 @@ class PairformerStack(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.
@@ -541,7 +541,7 @@ class MSABlock(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool): Whether to use low-memory attention. Defaults to False.
@@ -720,7 +720,7 @@ class MSAModule(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool): Whether to use low-memory attention. Defaults to False.
@@ -1346,7 +1346,7 @@ class EMPairformerStack(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.

@@ -14,7 +14,6 @@
 # limitations under the License.
 import importlib
 import math
-import os
 import sys
 from collections.abc import Callable
 
@@ -258,10 +257,6 @@ class OpenFoldLayerNorm(nn.Module):
 
 # Keep the function name for code simplicity
 def LayerNorm(c_in, eps: float = 1e-5):
-    if os.getenv("LAYERNORM_TYPE") == "fast_layernorm":
-        from cryozeta.model.layer_norm.layer_norm import FusedLayerNorm
-
-        return FusedLayerNorm(c_in, eps)
     return OpenFoldLayerNorm(c_in, eps)
 
 
@@ -595,12 +590,10 @@ class Attention(nn.Module):
                 "use_<...>" flags are True, a stock PyTorch implementation
                 is used instead
             use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory-efficient attention kernel.
-                If none of the "use_<...>" flags are True, a stock PyTorch
-                implementation is used instead
+                Accepted for older callers. Native attention is used.
             use_cuequivariance_attention:
                 Whether to use cuEquivariance triangle attention kernel.
-                Falls back to DeepSpeed or naive if unsupported shapes.
+                Uses bounded PyTorch attention for unsupported shapes.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -626,7 +619,7 @@ class Attention(nn.Module):
 
         attn_options = [
             use_memory_efficient_kernel,
-            use_deepspeed_evo_attention or use_cuequivariance_attention,
+            use_cuequivariance_attention,
             use_lma,
             use_flash,
         ]
@@ -642,7 +635,7 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
-        triangle_fallback = hasattr(self, "inf") and not use_deepspeed_evo_attention
+        triangle_fallback = hasattr(self, "inf")
         # On unsupported shapes, honor the requested fallback backend.
         if use_cuequivariance_attention:
             if cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype):
@@ -654,13 +647,11 @@ class Attention(nn.Module):
                 ]
                 use_cuequivariance_attention = False
 
-        # cuEquivariance and DeepSpeed apply scaling internally
+        # cuEquivariance applies scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
-            apply_scale=not (
-                use_deepspeed_evo_attention or use_cuequivariance_attention
-            ),
+            apply_scale=not use_cuequivariance_attention,
         )
 
         if use_cuequivariance_attention:
@@ -678,19 +669,9 @@ class Attention(nn.Module):
                     triangle_mask_bias(biases[0], q_x, _inf),
                     biases[1],
                 ]
-                if use_deepspeed_evo_attention:
-                    o = _deepspeed_evo_attn(q, k, v, biases)
-                else:
-                    o = _bounded_attention(
-                        q / math.sqrt(self.c_hidden), k, v, biases
-                    ).transpose(-2, -3)
-        elif use_deepspeed_evo_attention:
-            if len(biases) > 2:
-                raise ValueError(
-                    "If use_deepspeed_evo_attention is True, you may only "
-                    "provide up to two bias terms"
-                )
-            o = _deepspeed_evo_attn(q, k, v, biases)
+                o = _bounded_attention(
+                    q / math.sqrt(self.c_hidden), k, v, biases
+                ).transpose(-2, -3)
         elif use_lma:
             biases = [
                 b.expand((*b.shape[:-2], q_x.shape[-2], kv_x.shape[-2])) for b in biases
@@ -804,70 +785,6 @@ class GlobalAttention(nn.Module):
         m = self.linear_o(o)
 
         return m
-
-
-@torch.jit.ignore
-def _deepspeed_evo_attn(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    biases: list[torch.Tensor],
-):
-    """ ""
-    Compute attention using the DeepSpeed DS4Sci_EvoformerAttention kernel.
-
-    Args:
-        q:
-            [*, H, Q, C_hidden] query data
-        k:
-            [*, H, K, C_hidden] key data
-        v:
-            [*, H, V, C_hidden] value data
-        biases:
-            List of biases that broadcast to [*, H, Q, K]
-    """
-
-    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
-
-    def reshape_dims(x):
-        no_batch_dims = len(x.shape[:-3])
-        if no_batch_dims < 2:
-            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
-        if no_batch_dims > 2:
-            return x.reshape(*((x.shape[0], -1, *x.shape[-3:])))
-        return x
-
-    # [*, Q/K, H, C_hidden]
-    q = q.transpose(-2, -3)
-    k = k.transpose(-2, -3)
-    v = v.transpose(-2, -3)
-
-    # Reshape tensors to match expected input shape [B, N, Q/K, H, C_hidden]
-    # for DS4Sci_EvoformerAttention() by adding or flattening batch dims as needed.
-    orig_shape = q.shape
-    if len(orig_shape[:-3]) != 2:
-        q = reshape_dims(q)
-        k = reshape_dims(k)
-        v = reshape_dims(v)
-        biases = [reshape_dims(b) for b in biases]
-
-    # DeepSpeed attn. kernel requires inputs to be type bf16 or fp16
-    # Cast to bf16 so kernel can be used during inference
-    orig_dtype = q.dtype
-    if orig_dtype not in [torch.bfloat16, torch.float16]:
-        o = DS4Sci_EvoformerAttention(
-            q.to(dtype=torch.bfloat16),
-            k.to(dtype=torch.bfloat16),
-            v.to(dtype=torch.bfloat16),
-            [b.to(dtype=torch.bfloat16) for b in biases],
-        )
-
-        o = o.to(dtype=orig_dtype)
-    else:
-        o = DS4Sci_EvoformerAttention(q, k, v, biases)
-
-    o = o.reshape(orig_shape)
-    return o
 
 
 def _lma(

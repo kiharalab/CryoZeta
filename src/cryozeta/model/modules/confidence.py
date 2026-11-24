@@ -159,7 +159,7 @@ class ConfidenceHead(nn.Module):
             x_pred_coords (torch.Tensor): predicted coordinates
                 [..., N_sample, N_atoms, 3]
             use_memory_efficient_kernel (bool, optional): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool, optional): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool, optional): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool, optional): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool, optional): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool, optional): Whether to use low-memory attention. Defaults to False.

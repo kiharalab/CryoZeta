@@ -77,22 +77,6 @@ class InferenceRunner:
             self.device = torch.device("cpu")
         if DIST_WRAPPER.world_size > 1:
             dist.init_process_group(backend="nccl")
-        if self.configs.use_deepspeed_evo_attention:
-            env = os.getenv("CUTLASS_PATH", None)
-            self.print(f"env: {env}")
-            assert env is not None, (
-                "if use ds4sci, set env as https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/"
-            )
-            if env is not None:
-                logger.info(
-                    "The kernels will be compiled when DS4Sci_EvoformerAttention is called for the first time."
-                )
-        use_fastlayernorm = os.getenv("LAYERNORM_TYPE", None)
-        if use_fastlayernorm == "fast_layernorm":
-            logger.info(
-                "The kernels will be compiled when fast_layernorm is called for the first time."
-            )
-
         logger.info("Finished init ENV.")
 
     def init_basics(self) -> None:

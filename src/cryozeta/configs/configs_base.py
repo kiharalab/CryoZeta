@@ -47,7 +47,7 @@ model_configs = {
     ),  # NOTE: Number of blocks in each activation checkpoint, if None, no checkpointing is performed.
     # switch of kernels
     "use_memory_efficient_kernel": False,
-    "use_deepspeed_evo_attention": True,
+    "use_deepspeed_evo_attention": False,  # Accepted by older launchers.
     "use_flash": False,
     "use_lma": False,
     "use_xformer": False,

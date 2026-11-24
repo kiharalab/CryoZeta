@@ -266,7 +266,6 @@ class MSAAttention(nn.Module):
                 and self.pair_bias
                 and m.is_cuda
                 and not torch.is_grad_enabled()
-                and not use_deepspeed_evo_attention
                 and not use_memory_efficient_kernel
                 and not use_lma
             )

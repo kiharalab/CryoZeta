@@ -62,8 +62,6 @@ if [ -d "${_TEASER_BUILD_PY}/teaserpp_python" ]; then
 fi
 unset _TEASER_BUILD_PY
 
-# CUTLASS headers (provided by the pixi conda package)
-export CUTLASS_PATH="${CUTLASS_PATH:-${CONDA_PREFIX}}"
 
 # Add Conda lib to LD_LIBRARY_PATH for TVM/CUDA to find libnvrtc
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"

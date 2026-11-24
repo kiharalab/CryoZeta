@@ -8,7 +8,6 @@ set -e
 EXAMPLE_NAME=${1:-all}
 GPU_ID=${2:-0}
 
-export LAYERNORM_TYPE="${LAYERNORM_TYPE:-torch}"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
@@ -16,7 +15,6 @@ export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env "$GPU_ID")}"
 echo "==> Using pixi environment: ${PIXI_ENV}"
-export CUTLASS_PATH="${CUTLASS_PATH:-$(pwd)/.pixi/envs/${PIXI_ENV}}"
 
 if [ -d "$(pwd)/.pixi/envs/${PIXI_ENV}/lib" ]; then
     export LD_LIBRARY_PATH="$(pwd)/.pixi/envs/${PIXI_ENV}/lib:${LD_LIBRARY_PATH:-}"
@@ -29,7 +27,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention="${USE_DEEPSPEED_EVO_ATTENTION:-false}"
 use_cuequivariance_attention=true
 use_cuequivariance_multiplicative_update=true
 use_cuequivariance_attention_pair_bias=false
@@ -65,7 +62,6 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
@@ -85,7 +81,6 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
