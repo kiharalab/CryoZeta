@@ -586,7 +586,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sample.N_sample", dest="sample_N_sample", type=int, default=2)
     p.add_argument("--sample.N_step", dest="sample_N_step", type=int, default=20)
     p.add_argument("--model.N_cycle", dest="model_N_cycle", type=int, default=10)
-    p.add_argument("--use_deepspeed_evo_attention", default="true")
+    p.add_argument("--use_deepspeed_evo_attention", default="false")
     p.add_argument("--use_cuequivariance_attention", default="true")
     p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
     p.add_argument("--use_cuequivariance_attention_pair_bias", default="false")

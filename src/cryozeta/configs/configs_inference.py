@@ -16,6 +16,7 @@
 from cryozeta.configs.extend_types import ListValue, RequiredValue
 
 inference_configs = {
+    "use_deepspeed_evo_attention": False,
     "seeds": ListValue([101]),
     "dump_dir": "./output",
     "need_atom_confidence": False,

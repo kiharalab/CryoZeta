@@ -289,7 +289,8 @@ def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> b
     """Check if cuEquivariance triangle_attention would fall back for given params."""
     if not cueq_is_installed:
         return True
-    if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+    threshold = max(CUEQ_TRIATTN_FALLBACK_THRESHOLD, 200 if hidden_dim < 32 else 0)
+    if n_token <= threshold:
         return True
     if dtype == torch.float32:
         if hidden_dim > 32 or hidden_dim % 4 != 0:
@@ -359,6 +360,48 @@ def _attention(
     a = torch.matmul(a, value)
 
     return a
+
+
+def triangle_mask_bias(mask, x, inf):
+    dtype = x.dtype
+    if torch.is_autocast_enabled(x.device.type):
+        dtype = torch.get_autocast_dtype(x.device.type)
+    return min(inf, torch.finfo(dtype).max) * (mask.to(dtype) - 1)
+
+
+def _bounded_attention(q, k, v, biases, *, use_sdpa=False):
+    # Allow space for FP32 logits, probabilities and softmax workspace.
+    budget = 128 * 1024**2
+    bytes_per_query = math.prod(q.shape[:-2]) * k.shape[-2] * 12
+    if bytes_per_query > budget and q.ndim > 3 and q.shape[0]:
+        # Index broadcast batch dimensions as views, including shared biases.
+        out = torch.empty_like(q)
+        for row in range(q.shape[0]):
+            sliced = [
+                b[row if b.shape[0] > 1 else 0] if b.ndim == q.ndim else b
+                for b in biases
+            ]
+            out[row] = _bounded_attention(
+                q[row], k[row], v[row], sliced, use_sdpa=use_sdpa
+            )
+        return out
+    block = max(1, budget // max(1, bytes_per_query))
+
+    def attend(start, end):
+        query = q[..., start:end, :]
+        sliced = [b if b.shape[-2] == 1 else b[..., start:end, :] for b in biases]
+        if use_sdpa:
+            return nn.functional.scaled_dot_product_attention(
+                query, k, v, attn_mask=sliced[0], scale=1.0
+            )
+        return _attention(query, k, v, sliced)
+
+    if q.shape[-2] <= block:
+        return attend(0, q.shape[-2])
+    out = torch.empty_like(q)
+    for start in range(0, q.shape[-2], block):
+        out[..., start : start + block, :] = attend(start, start + block)
+    return out
 
 
 @torch.jit.ignore
@@ -536,6 +579,7 @@ class Attention(nn.Module):
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_flash: bool = False,
         flash_mask: torch.Tensor | None = None,
+        use_sdpa: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -598,21 +642,25 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
-        # cuEquivariance fallback: if shape is unsupported, fall back to DeepSpeed
+        triangle_fallback = hasattr(self, "inf") and not use_deepspeed_evo_attention
+        # On unsupported shapes, honor the requested fallback backend.
         if use_cuequivariance_attention:
-            if cueq_would_fall_back(
-                q_x.shape[-2], self.c_hidden, q_x.dtype
-            ):
+            if cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype):
                 # Convert raw mask back to inf-scaled for non-cueq paths
                 _inf = getattr(self, "inf", 1e9)
-                biases[0] = _inf * (biases[0] - 1)
+                biases = [
+                    triangle_mask_bias(biases[0], q_x, _inf),
+                    biases[1],
+                ]
                 use_cuequivariance_attention = False
-                use_deepspeed_evo_attention = True
 
         # cuEquivariance and DeepSpeed apply scaling internally
         q, k, v = self._prep_qkv(
-            q_x, kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cuequivariance_attention),
+            q_x,
+            kv_x,
+            apply_scale=not (
+                use_deepspeed_evo_attention or use_cuequivariance_attention
+            ),
         )
 
         if use_cuequivariance_attention:
@@ -626,10 +674,16 @@ class Attention(nn.Module):
             except (RuntimeError, TypeError, OSError):
                 # Triton compilation failure (e.g. missing ptxas); fall back
                 _inf = getattr(self, "inf", 1e9)
-                biases[0] = _inf * (biases[0] - 1)
-                q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
-                o = _deepspeed_evo_attn(q, k, v, biases)
-                use_cuequivariance_attention = False
+                biases = [
+                    triangle_mask_bias(biases[0], q_x, _inf),
+                    biases[1],
+                ]
+                if use_deepspeed_evo_attention:
+                    o = _deepspeed_evo_attn(q, k, v, biases)
+                else:
+                    o = _bounded_attention(
+                        q / math.sqrt(self.c_hidden), k, v, biases
+                    ).transpose(-2, -3)
         elif use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
@@ -645,6 +699,15 @@ class Attention(nn.Module):
             o = o.transpose(-2, -3)
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
+        elif (
+            use_sdpa
+            and len(biases) == 1
+            and biases[0].dtype in (q.dtype, torch.float32)
+        ):
+            # _prep_qkv already scaled Q. Keep the pair bias broadcast across rows.
+            o = _bounded_attention(q, k, v, biases, use_sdpa=True).transpose(-2, -3)
+        elif triangle_fallback:
+            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         else:
             o = _attention(q, k, v, biases)
             o = o.transpose(-2, -3)

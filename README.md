@@ -103,6 +103,15 @@ The auto-detection logic combines both:
 | >= 8.0 (Ampere / Ada / Hopper) | >= 12.8 | `default` (cu12) | 12.8 | 2.11.0 | 3.6.0 |
 | < 8.0 (Volta / Turing / older) | >= 11.8 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
 
+The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
+PyTorch scaled dot-product attention. Triangle attention still uses
+cuEquivariance when supported. To request the legacy implementations, set
+`LAYERNORM_TYPE=fast_layernorm` or `USE_DEEPSPEED_EVO_ATTENTION=true` before
+running the demo. DS4Sci cold-build and BF16 forward have been tested in the
+CUDA 12.8 Pixi environment (`-e default`) on RTX PRO 6000 Blackwell. The
+locked DeepSpeed builder selects C++17 for CUDA 13.2 while its PyTorch
+headers require C++20. Use the native backend in `cu13`.
+
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
 Set `CRYOZETA_TRITON_GEGLU=0` to benchmark the eager PyTorch implementation.

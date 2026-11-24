@@ -132,7 +132,7 @@ else
     PIXI_ENV="$(detect_pixi_env "$gpu_ids")"
 fi
 
-export LAYERNORM_TYPE=fast_layernorm
+export LAYERNORM_TYPE="${LAYERNORM_TYPE:-torch}"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
@@ -150,13 +150,14 @@ PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --no-install --frozen -e "$
 # instead of a system-installed CUDA toolkit.
 PIXI_PREFIX="$("${PIXI_RUN[@]}" bash -c 'echo $CONDA_PREFIX')"
 export CUDA_HOME="${PIXI_PREFIX}"
+export CUTLASS_PATH="${CUTLASS_PATH:-${PIXI_PREFIX}}"
 
 # ── Inference parameters ──────────────────────────────────────────────────────
 N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention=true
+use_deepspeed_evo_attention="${USE_DEEPSPEED_EVO_ATTENTION:-false}"
 use_cuequivariance=true  # Master toggle for all cuEquivariance modules
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}

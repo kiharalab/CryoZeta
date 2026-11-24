@@ -93,6 +93,7 @@ class MSAAttention(nn.Module):
         use_lma: bool,
         use_flash: bool,
         flash_mask: torch.Tensor | None,
+        use_sdpa: bool = False,
     ) -> torch.Tensor:
         def fn(m, biases, flash_mask):
             m = self.layer_norm_m(m)
@@ -105,6 +106,7 @@ class MSAAttention(nn.Module):
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=flash_mask,
+                use_sdpa=use_sdpa,
             )
 
         inputs = {"m": m}
@@ -251,15 +253,52 @@ class MSAAttention(nn.Module):
                 inplace_safe=inplace_safe,
             )
 
+        use_sdpa = False
         if use_flash:
             assert z is None
             biases = None
         else:
+            # A missing mask contributes an all-zero bias. Omit it for native
+            # CUDA inference so SDPA can use the shared pair bias directly.
+            use_sdpa = (
+                mask is None
+                and z is not None
+                and self.pair_bias
+                and m.is_cuda
+                and not torch.is_grad_enabled()
+                and not use_deepspeed_evo_attention
+                and not use_memory_efficient_kernel
+                and not use_lma
+            )
+            if use_sdpa and max(m.ndim, z.ndim) > 3:
+                # Keep each sample's bias shared across its rows. Flattening
+                # batch and row dimensions together materializes the broadcast.
+                batch_shape = torch.broadcast_shapes(m.shape[:-3], z.shape[:-3])
+                if 0 in batch_shape:
+                    return m.new_empty((*batch_shape, *m.shape[-3:]))
+                batch_m = m.expand(*batch_shape, *m.shape[-3:])
+                batch_z = z.expand(*batch_shape, *z.shape[-3:])
+                return torch.stack(
+                    [
+                        self.forward(
+                            mi, zi, chunk_size=chunk_size, inplace_safe=inplace_safe
+                        )
+                        for mi, zi in zip(batch_m, batch_z, strict=True)
+                    ]
+                )
             m, mask_bias, z = self._prep_inputs(m, z, mask, inplace_safe=inplace_safe)
-
-            biases = [mask_bias]
-            if z is not None:
-                biases.append(z)
+            if use_sdpa:
+                # SDPA's fused kernels need unit K stride and aligned rows.
+                # Prepare the shared [*, 1, H, Q, K] bias once before chunking.
+                length = z.shape[-1]
+                padding = -length % 8
+                aligned = z.new_empty((*z.shape[:-1], length + padding))
+                z = aligned[..., :length].copy_(z)
+                biases = [z]
+            else:
+                biases = [mask_bias]
+                if z is not None:
+                    biases.append(z)
 
         if chunk_size is not None:
             m = self._chunk(
@@ -271,6 +310,7 @@ class MSAAttention(nn.Module):
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=mask,
+                use_sdpa=use_sdpa,
             )
         else:
             m = self.layer_norm_m(m)
@@ -283,6 +323,7 @@ class MSAAttention(nn.Module):
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=mask,
+                use_sdpa=use_sdpa,
             )
 
         return m

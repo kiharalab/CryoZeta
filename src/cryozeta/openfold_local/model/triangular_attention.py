@@ -18,7 +18,7 @@ from functools import partial, partialmethod
 import torch
 import torch.nn as nn
 
-from cryozeta.openfold_local.model.primitives import Attention, LayerNorm, Linear
+from cryozeta.openfold_local.model.primitives import Attention, LayerNorm, Linear, triangle_mask_bias
 from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.tensor_utils import (
     permute_final_dims,
@@ -51,6 +51,7 @@ class TriangleAttention(nn.Module):
         self.mha = Attention(
             self.c_in, self.c_in, self.c_in, self.c_hidden, self.no_heads
         )
+        self.mha.inf = inf
 
     @torch.jit.ignore
     def _chunk(
@@ -121,7 +122,7 @@ class TriangleAttention(nn.Module):
             mask_bias = mask[..., :, None, None, :]
         else:
             # [*, I, 1, 1, J]
-            mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
+            mask_bias = triangle_mask_bias(mask, x, self.inf)[..., :, None, None, :]
 
         # [*, H, I, J]
         triangle_bias = permute_final_dims(self.linear(x), (2, 0, 1))
