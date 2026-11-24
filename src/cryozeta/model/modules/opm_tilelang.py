@@ -281,12 +281,31 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
     Z = weight.shape[0]
     out = torch.empty(B, N, N, Z, device=a.device, dtype=a.dtype)
 
+    # Batched GEMM over right-hand residues writes each H x H outer
+    # product contiguously for the output projection. Keep the batch at one
+    # to share the left operand as a stride-zero view across residues.
+    grouped = (
+        B == 1
+        and a.shape == b.shape
+        and H == 128
+        and Z == 128
+        and 1024 <= N <= 4096
+        and 1024 <= a.shape[2] <= 4096
+        and chunk_size == 16
+        and a.is_cuda
+        and a.dtype == b.dtype == torch.bfloat16
+        and a.is_contiguous()
+        and b.is_contiguous()
+        and not torch.is_grad_enabled()
+        and torch.cuda.get_device_capability(a.device) == (12, 0)
+    )
     if (
         a.is_cuda
         and not torch.is_grad_enabled()
         and a.dtype in (torch.float16, torch.bfloat16)
         and N >= 512
         and N > chunk_size
+        and not grouped
     ):
         # einsum flattens N and H for its right-hand GEMM operand. Store them
         # adjacently once so each row chunk can reuse that same matrix view.
@@ -296,6 +315,12 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
         n1_end = min(n1 + chunk_size, N)
         C = n1_end - n1
         a_chunk = a[:, n1:n1_end]                              # [B, C, S, H]
+        if grouped:
+            lhs = a_chunk[0].transpose(1, 2).reshape(C * H, -1).contiguous()
+            outer = torch.matmul(lhs, b[0])  # [N, C * H, H]
+            projected = F.linear(outer.view(N, C, H * H), weight, bias)
+            out[0, n1:n1_end] = projected.transpose(0, 1)
+            continue
         outer = torch.einsum("bcsh,bnsk->bcnhk", a_chunk, b)  # [B, C, N, H, H]
         outer = outer.reshape(B, C, N, H * H)                 # [B, C, N, H^2]
         out[:, n1:n1_end] = F.linear(outer, weight, bias)      # [B, C, N, Z]
