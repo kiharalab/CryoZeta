@@ -135,7 +135,7 @@ def parse_mrc(
     with mrcfile.open(mrc_path, permissive=True, mode="r") as mrc:
         if custom_logger:
             print_header(custom_logger, mrc)
-        grid_data = np.array(mrc.data.copy(), dtype=np.float32)
+        grid_data = np.array(mrc.data, dtype=np.float32, copy=True)
         header = mrc.header
         origin = np.array(header.origin.tolist(), dtype=np.float32)
         voxel_size = np.array(mrc.voxel_size.tolist(), dtype=np.float32)

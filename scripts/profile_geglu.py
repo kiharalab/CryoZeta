@@ -24,7 +24,7 @@ def main():
             if setting == "0":
                 reference = output
             else:
-                torch.testing.assert_close(output, reference)
+                torch.testing.assert_close(output, reference, atol=0, rtol=0)
             del output
             torch.cuda.synchronize()
             baseline = torch.cuda.memory_allocated()
@@ -40,8 +40,10 @@ def main():
                 end.synchronize()
                 samples.append(start.elapsed_time(end) / 50)
             peak = torch.cuda.max_memory_allocated() - baseline
-            print(f"{dtype} CRYOZETA_TRITON_GEGLU={setting} "
-                  f"{median(samples):.4f} ms, {peak / 2**20:.1f} MiB")
+            print(
+                f"{dtype} CRYOZETA_TRITON_GEGLU={setting} "
+                f"{median(samples):.4f} ms, {peak / 2**20:.1f} MiB"
+            )
 
 
 if __name__ == "__main__":

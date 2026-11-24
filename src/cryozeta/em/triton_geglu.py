@@ -2,6 +2,7 @@
 
 import logging
 import os
+from functools import cache
 
 import torch
 import triton
@@ -12,15 +13,27 @@ from triton.errors import TritonError
 _unavailable_devices = set()
 
 
-@triton.jit
-def _geglu_kernel(packed, output, count, width: tl.constexpr, block: tl.constexpr):
+@cache
+def _make_gelu_table(device, dtype):
+    # FP16 and BF16 each have 65,536 bit patterns. Using the eager GELU for
+    # the table preserves its rounding across CUDA and PyTorch versions.
+    codes = torch.arange(1 << 16, device=device, dtype=torch.int32).to(torch.int16)
+    table = torch.nn.functional.gelu(codes.view(dtype))
+    ready = torch.cuda.Event()
+    ready.record(torch.cuda.current_stream(device))
+    return table, ready
+
+
+@triton.jit(do_not_specialize=["count"])
+def _geglu_kernel(
+    packed, gelu_table, output, count, width: tl.constexpr, block: tl.constexpr
+):
     i = tl.program_id(0) * block + tl.arange(0, block)
     offset = (i // width) * (2 * width) + i % width
     value = tl.load(packed + offset, mask=i < count, other=0)
     gate = tl.load(packed + offset + width, mask=i < count, other=0)
-    g = gate.to(tl.float32)
-    # Match the intermediate dtype of eager GELU before multiplying.
-    activation = (0.5 * g * (1.0 + tl.erf(g * 0.7071067811865476))).to(gate.dtype)
+    code = gate.to(tl.uint16, bitcast=True).to(tl.int32)
+    activation = tl.load(gelu_table + code, mask=i < count, other=0)
     tl.store(output + i, value * activation, mask=i < count)
 
 
@@ -39,7 +52,11 @@ def try_geglu(packed):
     count = output.numel()
     try:
         with torch.cuda.device(packed.device):
-            _geglu_kernel[(triton.cdiv(count, 512),)](packed, output, count, width, 512)
+            table, ready = _make_gelu_table(packed.device, packed.dtype)
+            torch.cuda.current_stream(packed.device).wait_event(ready)
+            _geglu_kernel[(triton.cdiv(count, 512),)](
+                packed, table, output, count, width, 512, enable_fp_fusion=False
+            )
     except (TritonError, FileNotFoundError, RuntimeError) as exc:
         if isinstance(exc, RuntimeError) and "ptxas" not in str(exc).lower():
             raise

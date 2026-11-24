@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![CUDA](https://img.shields.io/badge/CUDA-11%20%7C%2012%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
-[![pixi](https://img.shields.io/badge/pixi-0.41.1-blue?logo=pixi)](https://pixi.sh)
+[![pixi](https://img.shields.io/badge/pixi-0.84.2-blue?logo=pixi)](https://pixi.sh)
 [![Ruff](https://img.shields.io/badge/Ruff-0.15.1-yellow?logo=ruff)](https://github.com/astral-sh/ruff)
 [![prek](https://img.shields.io/badge/prek-0.3.2-green?logo=git)](https://github.com/kawarabiyu/prek)
 
@@ -56,7 +56,8 @@ Estimated time: < 15 minutes
 curl -fsSL https://pixi.sh/install.sh | bash
 ```
 
-Or visit https://pixi.sh/latest/#installation for other installation methods.
+The project lockfile uses format v7 and was generated with Pixi 0.84.2. See the
+[Pixi installation guide](https://pixi.sh/latest/#installation) for other methods.
 
 ### 2. Clone and set up the project
 
@@ -91,15 +92,14 @@ one is **auto-detected** from two properties of your system:
 
 The auto-detection logic combines both:
 
-| Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch |
-|---|---|---|---|---|
-| >= 10.0 (Blackwell) | >= 13 | `cu13` | 13.x | >= 2.7 |
-| >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | >= 2.7 |
-| < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | >= 2.0, < 2.5 |
+| Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch | Triton |
+|---|---|---|---|---|---|
+| >= 10.0 (Blackwell) | >= 13 | `cu13` | 13.2 | 2.15.0 | 3.9.0 |
+| >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | 2.11.0 | 3.6.0 |
+| < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
 
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
-The CUDA 11.8 environment pairs PyTorch 2.4.1 with Triton 3.0.0.
 Set `CRYOZETA_TRITON_GEGLU=0` to benchmark the eager PyTorch implementation.
 Large BF16 activations also fuse the cast after GroupNorm with SiLU. This kernel
 takes the element count at runtime so different map sizes share a compiled
@@ -152,8 +152,8 @@ Available environments:
 | Environment | CUDA | Description |
 |-------------|------|-------------|
 | `default` | 12 | Default environment (CUDA 12.8) |
-| `cu11` | 11 | CUDA 11.8 with PyTorch < 2.5 |
-| `cu13` | 13 | CUDA 13.x for Blackwell GPUs |
+| `cu11` | 11 | CUDA 11.8 with PyTorch 2.7.1 |
+| `cu13` | 13 | CUDA 13.2 for Blackwell GPUs |
 | `dev` | 12 | Development (CUDA 12 + linting tools) |
 | `dev-cu11` | 11 | Development (CUDA 11 + linting tools) |
 | `dev-cu13` | 13 | Development (CUDA 13 + linting tools) |
