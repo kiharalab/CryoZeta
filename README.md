@@ -56,7 +56,10 @@ Estimated time: < 15 minutes
 curl -fsSL https://pixi.sh/install.sh | bash
 ```
 
-The project lockfile uses format v7 and was generated with Pixi 0.84.2. See the
+Use Pixi 0.84.2 or newer for the v7 lockfile. For an existing user install,
+run `pixi self-update` and check `pixi --version` in the launcher shell. If a
+system Pixi takes precedence, add the updated binary to the front of `PATH`
+(e.g. `export PATH="$HOME/.pixi/bin:$PATH"`). See the
 [Pixi installation guide](https://pixi.sh/latest/#installation) for other methods.
 
 ### 2. Clone and set up the project
@@ -64,13 +67,16 @@ The project lockfile uses format v7 and was generated with Pixi 0.84.2. See the
 ```bash
 git clone https://github.com/kiharalab/CryoZeta.git
 cd CryoZeta
-pixi run setup
+pixi run -e cu13 setup  # Blackwell with driver CUDA >= 13.2
 ```
 
-The setup command automatically:
+Select the environment for the GPU you will pass to the demo. For CUDA 12.8 use
+`pixi run -e default setup`. For CUDA 11.8 use `pixi run -e cu11 setup`.
+
+The setup command:
 
 1. Installs all dependencies (Python, CUDA, C++ libraries, etc.).
-2. Detects your GPU and selects the matching CUDA version (11, 12, or 13).
+2. Builds in the selected Pixi environment.
 3. Downloads CryoZeta assets (weights + examples) from Hugging Face.
 4. Clones and builds [TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus).
 
@@ -82,8 +88,7 @@ pixi run download-assets
 
 ### CUDA Environment Selection
 
-CryoZeta ships three CUDA environments. During setup and inference the correct
-one is **auto-detected** from two properties of your system:
+CryoZeta ships three CUDA environments. During demo inference the environment is **auto-detected** from two properties of your system:
 
 | Property | How it is read | What it controls |
 |----------|---------------|-----------------|
@@ -94,9 +99,9 @@ The auto-detection logic combines both:
 
 | Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch | Triton |
 |---|---|---|---|---|---|
-| >= 10.0 (Blackwell) | >= 13 | `cu13` | 13.2 | 2.15.0 | 3.9.0 |
-| >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | 2.11.0 | 3.6.0 |
-| < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
+| >= 10.0 (Blackwell) | >= 13.2 | `cu13` | 13.2 | 2.15.0 | 3.9.0 |
+| >= 8.0 (Ampere / Ada / Hopper) | >= 12.8 | `default` (cu12) | 12.8 | 2.11.0 | 3.6.0 |
+| < 8.0 (Volta / Turing / older) | >= 11.8 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
 
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.

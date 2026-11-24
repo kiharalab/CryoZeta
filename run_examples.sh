@@ -12,32 +12,9 @@ export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
-# ── Auto-detect pixi environment based on GPU ─────────────────────────────────
-detect_pixi_env() {
-    local compute_cap driver_cuda
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "default"; return
-    fi
-    driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n 's/.*CUDA Version: *\([0-9]*\).*/\1/p')
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
-    if [ -z "$driver_cuda" ] || [ -z "$compute_cap" ]; then
-        echo "default"; return
-    fi
-    local major="${compute_cap%%.*}"
-    if [ "$major" -ge 10 ] 2>/dev/null && [ "$driver_cuda" -ge 13 ] 2>/dev/null; then
-        echo "cu13"
-    elif [ "$major" -ge 8 ] 2>/dev/null && [ "$driver_cuda" -ge 12 ] 2>/dev/null; then
-        echo "default"
-    elif [ "$driver_cuda" -ge 11 ] 2>/dev/null; then
-        echo "cu11"
-    else
-        echo "default"
-    fi
-}
+. "$(dirname -- "${BASH_SOURCE[0]}")/scripts/detect_pixi_env.sh"
 
-PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env)}"
+PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env "$GPU_ID")}"
 echo "==> Using pixi environment: ${PIXI_ENV}"
 export CUTLASS_PATH="$(pwd)/.pixi/envs/${PIXI_ENV}"
 

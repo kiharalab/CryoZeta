@@ -55,38 +55,6 @@ Examples:
 USAGE
 }
 
-# ── Auto-detect pixi environment based on GPU and driver ──────────────────────
-detect_pixi_env() {
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "default"; return
-    fi
-
-    # Max CUDA version the installed driver supports (major only)
-    local driver_cuda
-    driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n 's/.*CUDA Version: *\([0-9]*\).*/\1/p')
-
-    # Highest compute capability among all GPUs
-    local compute_cap
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
-
-    if [ -z "$driver_cuda" ] || [ -z "$compute_cap" ]; then
-        echo "default"; return
-    fi
-
-    local major="${compute_cap%%.*}"
-
-    if [ "$major" -ge 10 ] 2>/dev/null && [ "$driver_cuda" -ge 13 ] 2>/dev/null; then
-        echo "cu13"
-    elif [ "$major" -ge 8 ] 2>/dev/null && [ "$driver_cuda" -ge 12 ] 2>/dev/null; then
-        echo "default"
-    elif [ "$driver_cuda" -ge 11 ] 2>/dev/null; then
-        echo "cu11"
-    else
-        echo "default"
-    fi
-}
 
 # ── Map CUDA version shorthand to pixi env name ──────────────────────────────
 cuda_version_to_env() {
@@ -148,6 +116,8 @@ done
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${PIXI_PROJECT_ROOT:-${SCRIPT_DIR}}"
+. "$SCRIPT_DIR/scripts/detect_pixi_env.sh"
+gpu_ids="${cli_gpu:-1}"
 ASSETS_DIR="${CRYOZETA_ASSETS_DIR:-${PROJECT_ROOT}/assets}"
 
 # ── Resolve pixi environment ─────────────────────────────────────────────────
@@ -159,7 +129,7 @@ elif [ -n "${PIXI_ENV:-}" ]; then
 elif [ -n "${CRYOZETA_CUDA:-}" ]; then
     PIXI_ENV="$(cuda_version_to_env "$CRYOZETA_CUDA")"
 else
-    PIXI_ENV="$(detect_pixi_env)"
+    PIXI_ENV="$(detect_pixi_env "$gpu_ids")"
 fi
 
 export LAYERNORM_TYPE=fast_layernorm
@@ -206,11 +176,6 @@ dump_dir="${cli_output_dir:-${PROJECT_ROOT}/output/large_examples}"
 selected_entry="${cli_example}"
 selected_input_json="${dump_dir}/selected_input_entry.json"
 cycle_input_json="${dump_dir}/selected_cycle_input_entry.json"
-
-# ── GPU configuration ────────────────────────────────────────────────────────
-# CLI flag overrides the default; use -g/--gpu to set from command line.
-gpu_ids="${cli_gpu:-1}"
-# ─────────────────────────────────────────────────────────────────────────────
 
 echo "==> Using pixi environment: ${PIXI_ENV}"
 echo "==> Project root: ${PROJECT_ROOT}"

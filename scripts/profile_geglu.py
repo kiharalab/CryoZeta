@@ -5,7 +5,7 @@ from statistics import median
 
 import torch
 
-from cryozeta.em.blocks import GeGLU
+from cryozeta.em.blocks import GeGLU, try_geglu
 
 
 @torch.inference_mode()
@@ -19,6 +19,11 @@ def main():
         x = torch.randn(4, 4096, 128, device="cuda", dtype=dtype)
         for setting in ("0", "1"):
             os.environ["CRYOZETA_TRITON_GEGLU"] = setting
+            if setting == "1" and (
+                try_geglu is None or try_geglu(model.proj(x)) is None
+            ):
+                print(f"{dtype} fused GeGLU unavailable on this device; skipping")
+                continue
             for _ in range(5):
                 output = model(x)
             if setting == "0":
