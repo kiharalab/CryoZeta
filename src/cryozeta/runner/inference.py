@@ -114,7 +114,8 @@ class InferenceRunner:
         assert checkpoint_path.endswith(".safetensors"), (
             "Checkpoint must be a safetensors file"
         )
-        state_dict = load_file(checkpoint_path, device=str(self.device))
+        # Copy CPU-mapped weights directly into the existing model parameters.
+        state_dict = load_file(checkpoint_path, device="cpu")
 
         self.model.load_state_dict(
             state_dict=state_dict,
