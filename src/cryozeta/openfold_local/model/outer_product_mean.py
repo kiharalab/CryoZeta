@@ -114,19 +114,38 @@ class OuterProductMean(nn.Module):
         Returns:
             [*, N_res, N_res, C_z] pair embedding update
         """
-        if mask is None:
+        use_chunked = os.environ.get("USE_OPM_CHUNKED", "1") == "1"
+        unmasked = (
+            mask is None
+            and use_chunked
+            and not self.use_tilelang
+            and isinstance(self.eps, (float, int))
+            and m.is_cuda
+            and not torch.is_grad_enabled()
+            and m.dtype == torch.bfloat16
+            and 0 < m.shape[-3] <= 4096
+            and not torch.compiler.is_compiling()
+            and (
+                not torch.is_autocast_enabled("cuda")
+                or torch.get_autocast_dtype("cuda") == m.dtype
+            )
+        )
+        if mask is None and not unmasked:
             mask = m.new_ones(m.shape[:-1])
 
         # [*, N_seq, N_res, C_m]
         ln = self.layer_norm(m)
 
         # [*, N_seq, N_res, C]
-        mask = mask.unsqueeze(-1)
+        if mask is not None:
+            mask = mask.unsqueeze(-1)
         a = self.linear_1(ln)
-        a = a * mask
+        if mask is not None:
+            a = a * mask
 
         b = self.linear_2(ln)
-        b = b * mask
+        if mask is not None:
+            b = b * mask
 
         del ln
 
@@ -135,15 +154,20 @@ class OuterProductMean(nn.Module):
         b = b.transpose(-2, -3).contiguous()
 
         # Norm: [*, N_res, N_res]
-        norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
-        norm = (norm + self.eps).squeeze(-1)
+        if mask is None:
+            # Retain the two BF16 roundings of the all-ones contraction and
+            # subsequent epsilon addition (important for odd sequence sizes).
+            norm = m.new_full((), m.shape[-3]) + self.eps
+        else:
+            norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
+            norm = (norm + self.eps).squeeze(-1)
 
         if self.use_tilelang:
             return opm_tilelang(
                 a, b, self.linear_out.weight, self.linear_out.bias, norm
             )
 
-        if os.environ.get("USE_OPM_CHUNKED", "1") == "1":
+        if use_chunked:
             return opm_chunked(
                 a, b, self.linear_out.weight, self.linear_out.bias, norm
             )
