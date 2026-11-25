@@ -22,6 +22,13 @@ cryozeta-combine = "cryozeta.runner.combine:app"
 cryozeta-cycle-predict = "cryozeta.runner.cycle_predict:main"
 cryozeta-combine-stages = "cryozeta.runner.combine_stages:main"
 
+[tool.setuptools.package-data]
+"cryozeta.third_party.fpf" = [
+    "LICENSE", "NOTICE", "*.md", "*.json", "third_party_licenses/*.txt",
+    "opt_core/kernels/*.PROTENIX_LICENSE", "opt_core/kernels/*/NOTICE",
+    "opt_core/kernels/*/*.json",
+]
+
 [tool.pixi.workspace]
 channels = ["nvidia", "pytorch", "conda-forge"]
 platforms = ["linux-64"]

@@ -1,3 +1,6 @@
+# Preserve the imported FlashPairformer source and license text.
+exclude: ^src/cryozeta/third_party/fpf/
+
 default_language_version:
   python: python3.12
 
