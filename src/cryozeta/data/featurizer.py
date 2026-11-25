@@ -14,6 +14,7 @@
 
 import copy
 import itertools
+import os
 from collections import defaultdict
 
 import numpy as np
@@ -623,6 +624,10 @@ class Featurizer:
             self.cropped_atom_array.modified_res_mask
         ).long()
 
+        if os.environ.get("CRYOZETA_DROP_BOND_MASK") == "1":
+            # Training label (bond loss); inference never reads it. Skips a dense float64 [N_atom, N_atom]
+            # host array plus its float32/int64 copies.
+            return mask_features
         lig_polymer_bonds = get_ligand_polymer_bond_mask(self.cropped_atom_array)
         num_atoms = len(self.cropped_atom_array)
         bond_mask_mat = np.zeros((num_atoms, num_atoms))

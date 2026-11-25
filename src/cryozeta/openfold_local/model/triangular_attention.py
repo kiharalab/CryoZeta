@@ -18,6 +18,7 @@ from functools import partial, partialmethod
 import torch
 import torch.nn as nn
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.model.primitives import Attention, LayerNorm, Linear
 from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.tensor_utils import (
@@ -63,6 +64,7 @@ class TriangleAttention(nn.Module):
         use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        use_fpf_k2b: bool = False,
     ) -> torch.Tensor:
         "triangle! triangle!"
         mha_inputs = {
@@ -78,6 +80,7 @@ class TriangleAttention(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
+                use_fpf_k2b=use_fpf_k2b,
             ),
             mha_inputs,
             chunk_size=chunk_size,
@@ -95,6 +98,46 @@ class TriangleAttention(nn.Module):
         use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+    ) -> torch.Tensor:
+        """kernel-bench routing seam: the V0 route comes from the flags; an in-scope
+        replacement from CRYOZETA_KERNEL_VARIANT overrides them (kernel_routing)."""
+        v0 = (
+            "cueq" if use_cuequivariance_attention
+            else "ds4sci" if use_deepspeed_evo_attention
+            else "lma" if use_lma
+            else "torch"
+        )
+        with kr.op("triatt", v0, x) as call:
+            use_fpf_k2b = call is not None and call.requested == "fpf_k2b"
+            if call is not None and call.in_scope and not use_fpf_k2b:
+                p = call.requested
+                use_cuequivariance_attention = p == "cueq"
+                use_deepspeed_evo_attention = p == "ds4sci"
+                use_lma = p == "lma"
+                use_memory_efficient_kernel = False
+            return self._forward(
+                x,
+                mask=mask,
+                chunk_size=chunk_size,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cuequivariance_attention=use_cuequivariance_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                use_fpf_k2b=use_fpf_k2b,
+            )
+
+    def _forward(
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
+        use_memory_efficient_kernel: bool = False,
+        use_deepspeed_evo_attention: bool = False,
+        use_cuequivariance_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        use_fpf_k2b: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -116,8 +159,8 @@ class TriangleAttention(nn.Module):
         # [*, I, J, C_in]
         x = self.layer_norm(x)
 
-        # cuEquivariance gets raw mask; other paths get inf-scaled mask
-        if use_cuequivariance_attention:
+        # cuEquivariance (and fpf_k2b) get raw mask; other paths get inf-scaled mask
+        if use_cuequivariance_attention or use_fpf_k2b:
             mask_bias = mask[..., :, None, None, :]
         else:
             # [*, I, 1, 1, J]
@@ -141,6 +184,7 @@ class TriangleAttention(nn.Module):
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
+                use_fpf_k2b=use_fpf_k2b,
             )
         else:
             x = self.mha(
@@ -151,6 +195,7 @@ class TriangleAttention(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
+                use_fpf_k2b=use_fpf_k2b,
             )
 
         if not self.starting:

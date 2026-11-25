@@ -20,6 +20,7 @@ from functools import partialmethod
 import torch
 import torch.nn as nn
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.model.primitives import LayerNorm, Linear
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
 from cryozeta.openfold_local.utils.tensor_utils import permute_final_dims
@@ -450,6 +451,49 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         _inplace_chunk_size: int | None = 256,
         use_cuequivariance_multiplicative_update: bool = False,
     ) -> torch.Tensor:
+        """kernel-bench routing seam (kernel_routing): V0 from the flag, in-scope replacement from the variant."""
+        v0 = "cueq" if use_cuequivariance_multiplicative_update else "torch"
+        with kr.op("trimul", v0, z) as call:
+            prov = call.requested if call is not None else v0
+            if prov == "fpf_trimul_v4":
+                from cryozeta.model import kernel_providers as kp
+
+                try:
+                    out = kp.fpf_trimul(self, z, mask, residual=inplace_safe and _add_with_inplace)
+                    kr.served(prov)
+                    return out
+                except kp.Ineligible as e:
+                    kr.ineligible(e.reason)
+                except RuntimeError as e:  # same rule as K2B (primitives._fpf_k2b): rescue only where allowed
+                    if not kr.rescue_allowed():
+                        raise
+                    kr.ineligible("oom" if kr.is_oom(e) else "runtime_error")
+                prov = v0
+            if prov == "cueq_cached_cat" and torch.is_grad_enabled():
+                kr.ineligible("ineligible_mode")  # cached weights are inference-only
+                prov = v0
+            out = self._forward(
+                z,
+                mask=mask,
+                inplace_safe=inplace_safe,
+                _add_with_inplace=_add_with_inplace,
+                _inplace_chunk_size=_inplace_chunk_size,
+                use_cuequivariance_multiplicative_update=prov in ("cueq", "cueq_cached_cat"),
+                _cached_cat=prov == "cueq_cached_cat",
+            )
+            kr.served(prov)
+            return out
+
+    def _forward(
+        self,
+        z: torch.Tensor,
+        mask: torch.Tensor | None = None,
+        inplace_safe: bool = False,
+        _add_with_inplace: bool = False,
+        _inplace_chunk_size: int | None = 256,
+        use_cuequivariance_multiplicative_update: bool = False,
+        _cached_cat: bool = False,
+    ) -> torch.Tensor:
         """
         Args:
             x:
@@ -459,7 +503,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
-        if use_cuequivariance_multiplicative_update:
+        if use_cuequivariance_multiplicative_update and _cached_cat:
+            from cryozeta.model import kernel_providers as kp
+
+            w = kp.cat_weights(self)  # C-CAT
+            p_in_weight, g_in_weight = w["p_in_weight"], w["g_in_weight"]
+            p_in_bias, g_in_bias = w["p_in_bias"], w["g_in_bias"]
+        elif use_cuequivariance_multiplicative_update:
             p_in_weight = torch.cat(
                 [self.linear_a_p.weight, self.linear_b_p.weight], dim=0
             )
@@ -472,6 +522,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             g_in_bias = torch.cat(
                 [self.linear_a_g.bias, self.linear_b_g.bias], dim=0
             )
+        if use_cuequivariance_multiplicative_update:
             result = _cuequivariance_triangular_mult(
                 z,
                 direction="outgoing" if self._outgoing else "incoming",

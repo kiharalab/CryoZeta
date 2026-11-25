@@ -16,7 +16,6 @@
 import functools
 import operator
 import os
-import time
 from typing import Any
 
 import torch
@@ -25,6 +24,7 @@ from loguru import logger
 from torch.profiler import record_function
 from tqdm import tqdm
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.model import sample_confidence
 from cryozeta.model.generator import (
     InferenceNoiseScheduler,
@@ -206,6 +206,11 @@ class CryoZeta(nn.Module):
             )  #  [..., N_token, N_token, c_z]
             pz_init = self.linear_no_bias_pzinit(pz_inputs)
             p_init = self.linear_no_bias_pinit(p_inputs)
+            if os.environ.get("CRYOZETA_FREE_EMBED_INPUTS") == "1":
+                # not read after this point: 1.43 GiB at N_token 2048, P 620
+                del pz_inputs, p_inputs
+                input_feature_dict.pop("pz", None)
+                input_feature_dict.pop("p", None)
 
             if inplace_safe:
                 z_init += self.relative_position_encoding(input_feature_dict)
@@ -455,7 +460,7 @@ class CryoZeta(nn.Module):
         Returns:
             tuple[dict[str, torch.Tensor], dict[str, Any], dict[str, Any]]: Prediction, log, and time dictionaries.
         """
-        step_st = time.time()
+        step_st = kr.clock("start")
 
         # If a previous sample raised an exception after _offload_trunk() was called (e.g.
         # OOM in the confidence head), the trunk modules may still be on CPU.  Reload them
@@ -485,6 +490,14 @@ class CryoZeta(nn.Module):
         pred_dict = {}
         time_tracker = {}
 
+        # Not used by the trunk; 0.81 GiB of fp32 weights at the trunk peak
+        late_modules = (self.diffusion_module, self.confidence_head)
+        heads_late = os.environ.get("CRYOZETA_HEADS_LATE") == "1"
+        if heads_late:
+            for m in late_modules:
+                m.to("cpu")
+            torch.cuda.empty_cache()
+
         with record_function("empairformer_output"):
             s_inputs, s, z, pz, _p = self.get_empairformer_output(
                 input_feature_dict=input_feature_dict,
@@ -492,6 +505,7 @@ class CryoZeta(nn.Module):
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
             )
+        kr.save_trunk(s=s, z=z)  # G-trunk calibration input; no-op unless CRYOZETA_TRUNK_DUMP
         keys_to_delete = []
         for key in input_feature_dict.keys():
             if "template_" in key or key in [
@@ -512,8 +526,11 @@ class CryoZeta(nn.Module):
         # Frees ~800MB-1.5GB of VRAM for diffusion and confidence phases.
         trunk_device = s_inputs.device
         self._offload_trunk()
+        if heads_late:
+            for m in late_modules:
+                m.to(trunk_device)
 
-        step_trunk = time.time()
+        step_trunk = kr.clock("empairformer")
         time_tracker.update({"empairformer": step_trunk - step_st})
         logger.info(
             f"EMPairformer done in {step_trunk - step_st:.1f}s. Starting diffusion sampling..."
@@ -539,7 +556,7 @@ class CryoZeta(nn.Module):
                 use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
             )
 
-        step_diffusion = time.time()
+        step_diffusion = kr.clock("diffusion")
         time_tracker.update({"diffusion": step_diffusion - step_trunk})
         logger.info(
             f"Diffusion sampling done in {step_diffusion - step_trunk:.1f}s. Starting model fitting..."
@@ -800,7 +817,7 @@ class CryoZeta(nn.Module):
         torch.cuda.empty_cache()
 
         # Confidence logits
-        step_fitting = time.time()
+        step_fitting = kr.clock("fitting")
         logger.info(f"Model fitting done in {step_fitting - step_diffusion:.1f}s. Running confidence head...")
         with record_function("confidence_head"):
             (
@@ -826,12 +843,12 @@ class CryoZeta(nn.Module):
                 chunk_size=chunk_size,
             )
 
-        step_confidence = time.time()
+        step_confidence = kr.clock("confidence")
         time_tracker.update({"confidence": step_confidence - step_fitting})
-        time_tracker.update({"model_forward": time.time() - step_st})
+        time_tracker.update({"model_forward": step_confidence - step_st})
         logger.info(
             f"Confidence head done in {step_confidence - step_fitting:.1f}s. "
-            f"Total model forward: {time.time() - step_st:.1f}s "
+            f"Total model forward: {step_confidence - step_st:.1f}s "
             f"(empairformer={time_tracker['empairformer']:.1f}s, "
             f"diffusion={time_tracker['diffusion']:.1f}s, "
             f"fitting={step_fitting - step_diffusion:.1f}s, "

@@ -13,6 +13,8 @@
 # under GPLv3.
 
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -215,7 +217,8 @@ class ConfidenceHead(nn.Module):
                     chunk_size=chunk_size,
                 )
             )
-            if z_trunk.shape[-2] > 2000 and (not self.training):
+            # kernel-bench M-...-OFF: CRYOZETA_CONF_OFFLOAD_MIN_N lowers the legacy N > 2000 offload threshold
+            if z_trunk.shape[-2] > int(os.environ.get("CRYOZETA_CONF_OFFLOAD_MIN_N", "2000")) and (not self.training):
                 # cpu offload pae_preds/pde_preds
                 pae_pred = pae_pred.cpu()
                 pde_pred = pde_pred.cpu()

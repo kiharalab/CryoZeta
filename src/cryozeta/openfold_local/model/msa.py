@@ -17,6 +17,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.model.primitives import (
     Attention,
     GlobalAttention,
@@ -213,6 +214,40 @@ class MSAAttention(nn.Module):
         return m
 
     def forward(
+        self,
+        m: torch.Tensor,
+        z: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
+        use_memory_efficient_kernel: bool = False,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        use_flash: bool = False,
+        inplace_safe: bool = False,
+        _chunk_logits: int | None = None,
+        _checkpoint_chunks: bool | None = None,
+    ) -> torch.Tensor:
+        """kernel-bench routing seam for row/column attention (kernel_routing op 'rowcol')."""
+        v0 = (
+            "ds4sci" if use_deepspeed_evo_attention
+            else "lma" if use_lma
+            else "flash" if use_flash
+            else "torch"
+        )
+        with kr.op("rowcol", v0, m) as call:
+            if call is not None and call.in_scope:
+                p = call.requested
+                use_deepspeed_evo_attention, use_lma = p == "ds4sci", p == "lma"
+                use_memory_efficient_kernel = use_flash = False
+            return self._forward(
+                m, z=z, mask=mask, chunk_size=chunk_size,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma, use_flash=use_flash, inplace_safe=inplace_safe,
+                _chunk_logits=_chunk_logits, _checkpoint_chunks=_checkpoint_chunks,
+            )
+
+    def _forward(
         self,
         m: torch.Tensor,
         z: torch.Tensor | None = None,

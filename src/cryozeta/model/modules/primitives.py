@@ -13,6 +13,7 @@
 # under GPLv3.
 
 import math
+import os
 from functools import partial
 
 import torch
@@ -96,6 +97,17 @@ class BiasInitLinear(Linear):
             nn.init.constant_(tensor=self.bias, val=biasinit)
 
 
+def transition_chunks(rows: int, c: int, n: int, free_bytes: int, frac: float = 0.5) -> int:
+    """Power-of-two row-chunk count so one chunk's live tensors (LayerNorm out + two n*c hidden = (1 + 2n)*c
+    per row, costed at fp32) fit in frac * free_bytes. 1 = unchunked, as V0 below N_token 3200."""
+    # ponytail: fp32 costing overestimates bf16 trunk calls 2x (extra chunks, same math); frac covers fragmentation
+    need = rows * c * (1 + 2 * n) * 4
+    k = 1
+    while need > k * frac * free_bytes and k < rows:
+        k *= 2
+    return min(k, rows)
+
+
 class Transition(nn.Module):
     """
     Implements Algorithm 11 in AF3
@@ -141,6 +153,10 @@ class Transition(nn.Module):
             size = x.shape[-2]
             x = x.reshape(-1, dim_size)
             chunk_num = 1 if size < 3200 else 8
+            if x.is_cuda and os.environ.get("CRYOZETA_TRANSITION_CHUNK") == "memory":  # kernel-bench M-TCHUNK-mem
+                free, _ = torch.cuda.mem_get_info(x.device)
+                free += torch.cuda.memory_reserved(x.device) - torch.cuda.memory_allocated(x.device)
+                chunk_num = max(chunk_num, transition_chunks(x.shape[0], self.c_in, self.n, free))
             chunks = torch.chunk(x, chunk_num, dim=-2)
             outputs = torch.empty(
                 (x.shape[0], self.c_in), dtype=x.dtype, device=x.device

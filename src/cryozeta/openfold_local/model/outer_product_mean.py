@@ -19,6 +19,7 @@ from functools import partial
 import torch
 import torch.nn as nn
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.model.primitives import Linear
 from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
@@ -104,6 +105,7 @@ class OuterProductMean(nn.Module):
         mask: torch.Tensor | None = None,
         chunk_size: int | None = None,
         inplace_safe: bool = False,
+        provider: str = "einsum",
     ) -> torch.Tensor:
         """
         Args:
@@ -138,12 +140,13 @@ class OuterProductMean(nn.Module):
         norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
         norm = (norm + self.eps).squeeze(-1)
 
-        if self.use_tilelang:
+        kr.served(provider)
+        if provider == "tilelang":
             return opm_tilelang(
                 a, b, self.linear_out.weight, self.linear_out.bias, norm
             )
 
-        if os.environ.get("USE_OPM_CHUNKED", "1") == "1":
+        if provider == "chunked":
             return opm_chunked(
                 a, b, self.linear_out.weight, self.linear_out.bias, norm
             )
@@ -163,8 +166,19 @@ class OuterProductMean(nn.Module):
         chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                return self._forward(m.float(), mask, chunk_size, inplace_safe)
-        else:
-            return self._forward(m, mask, chunk_size, inplace_safe)
+        # V0 dispatch as at c544c6b: TileLang if enabled+importable, else USE_OPM_CHUNKED (default 1), else einsum
+        v0 = (
+            "tilelang" if self.use_tilelang
+            else "chunked" if os.environ.get("USE_OPM_CHUNKED", "1") == "1"
+            else "einsum"
+        )
+        with kr.op("opm", v0, m) as call:
+            prov = call.requested if call is not None else v0
+            if prov == "tilelang" and not _tilelang_available:
+                kr.ineligible("import_error")
+                prov = v0
+            if is_fp16_enabled():
+                with torch.amp.autocast("cuda", enabled=False):
+                    return self._forward(m.float(), mask, chunk_size, inplace_safe, prov)
+            else:
+                return self._forward(m, mask, chunk_size, inplace_safe, prov)

@@ -43,6 +43,7 @@ from cryozeta.model.utils import (
     broadcast_token_to_atom,
     permute_final_dims,
 )
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.model.primitives import LayerNorm
 from cryozeta.openfold_local.utils.checkpointing import checkpoint_blocks
 
@@ -240,12 +241,15 @@ class AttentionPairBias(nn.Module):
             torch.Tensor: the updated a from AttentionPairBias
                 [..., N_token, c_a]
         """
-        if (
-            use_cuequivariance_attention_pair_bias
-            and _cueq_attn_pair_bias_available
-            and (self.attention.c_hidden % 32 == 0)
-        ):
-            return self._cuequivariance_standard_attention(a, z)
+        if use_cuequivariance_attention_pair_bias:
+            if not _cueq_attn_pair_bias_available:
+                kr.ineligible("import_error")
+            elif self.attention.c_hidden % 32 != 0:
+                kr.ineligible("ineligible_shape")  # c544c6b gate kept: c_hidden 24 / 48 run torch
+            else:
+                kr.served("cueq")
+                return self._cuequivariance_standard_attention(a, z)
+        kr.served("torch")
 
         # Multi-head attention bias
         bias = self.linear_nobias_z(self.layernorm_z(z))
@@ -268,6 +272,27 @@ class AttentionPairBias(nn.Module):
         use_cuequivariance_attention_pair_bias: bool = False,
     ) -> torch.Tensor:
         """Details are given in local_forward and standard_forward"""
+        v0 = "cueq" if use_cuequivariance_attention_pair_bias else "torch"
+        with kr.op("apb", v0, z) as call:
+            if call is not None and call.in_scope:
+                use_cuequivariance_attention_pair_bias = call.requested == "cueq"
+            return self._forward(
+                a, s, z, n_queries=n_queries, n_keys=n_keys, inplace_safe=inplace_safe,
+                chunk_size=chunk_size,
+                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
+            )
+
+    def _forward(
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        z: torch.Tensor,
+        n_queries: int | None = None,
+        n_keys: int | None = None,
+        inplace_safe: bool = False,
+        chunk_size: int | None = None,
+        use_cuequivariance_attention_pair_bias: bool = False,
+    ) -> torch.Tensor:
         # Input projections
         if self.has_s:
             a = self.layernorm_a(a=a, s=s)
@@ -276,6 +301,7 @@ class AttentionPairBias(nn.Module):
 
         # Multihead attention with pair bias
         if n_queries and n_keys:
+            kr.served("torch")  # local (atom) attention has no alternative backend
             a = self.local_multihead_attention(
                 a,
                 s,
@@ -387,6 +413,8 @@ class DiffusionTransformer(nn.Module):
     Implements Algorithm 23 in AF3
     """
 
+    kb_site = "diffusion"  # kernel-bench call-site label
+
     def __init__(
         self,
         c_a: int,  # could be 128 or 768 in AF3
@@ -441,13 +469,8 @@ class DiffusionTransformer(nn.Module):
             for b in self.blocks
         ]
 
-        def clear_cache(b, *args, **kwargs):
-            torch.cuda.empty_cache()
-            return b(*args, **kwargs)
-
-        if clear_cache_between_blocks:
-            blocks = [partial(clear_cache, b) for b in blocks]
-        return blocks
+        # kernel-bench: label the call site for routing counters; count per-stack block clears (M-CLEAR)
+        return [partial(kr.run_block, self.kb_site, clear_cache_between_blocks, b) for b in blocks]
 
     def forward(
         self,
@@ -476,10 +499,7 @@ class DiffusionTransformer(nn.Module):
             torch.Tensor: the output of DiffusionTransformer
                 [..., N, c_a]
         """
-        if z.shape[-2] > 2000 and (not self.training):
-            clear_cache_between_blocks = True
-        else:
-            clear_cache_between_blocks = False
+        clear_cache_between_blocks = kr.clear_between_blocks(z.shape[-2], self.training)
         blocks = self._prep_blocks(
             n_queries=n_queries,
             n_keys=n_keys,
@@ -542,6 +562,7 @@ class AtomTransformer(nn.Module):
             c_z=c_atompair,
             blocks_per_ckpt=blocks_per_ckpt,
         )
+        self.diffusion_transformer.kb_site = "atom"
 
     def forward(
         self,

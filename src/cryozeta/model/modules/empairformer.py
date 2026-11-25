@@ -19,6 +19,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.model.modules.em_module import (
     InterMultiplicativeUpdateIncoming,
     InterMultiplicativeUpdateOutcomming,
@@ -233,6 +234,8 @@ class PairformerStack(nn.Module):
     Implements Algorithm 17 [PairformerStack] in AF3
     """
 
+    kb_site = "confidence"  # kernel-bench call-site label
+
     def __init__(
         self,
         n_blocks: int = 48,
@@ -293,13 +296,8 @@ class PairformerStack(nn.Module):
             for b in self.blocks
         ]
 
-        def clear_cache(b, *args, **kwargs):
-            torch.cuda.empty_cache()
-            return b(*args, **kwargs)
-
-        if clear_cache_between_blocks:
-            blocks = [partial(clear_cache, b) for b in blocks]
-        return blocks
+        # kernel-bench: label the call site for routing counters; count per-stack block clears (M-CLEAR)
+        return [partial(kr.run_block, self.kb_site, clear_cache_between_blocks, b) for b in blocks]
 
     def forward(
         self,
@@ -337,10 +335,7 @@ class PairformerStack(nn.Module):
                 [..., N_token, c_s]
                 [..., N_token, N_token, c_z]
         """
-        if z.shape[-2] > 2000 and (not self.training):
-            clear_cache_between_blocks = True
-        else:
-            clear_cache_between_blocks = False
+        clear_cache_between_blocks = kr.clear_between_blocks(z.shape[-2], self.training)
         blocks = self._prep_blocks(
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
@@ -585,6 +580,8 @@ class MSAModule(nn.Module):
     Implements Algorithm 8 [MSAModule] in AF3
     """
 
+    kb_site = "msa"  # kernel-bench call-site label
+
     def __init__(
         self,
         n_blocks: int = 4,
@@ -687,13 +684,8 @@ class MSAModule(nn.Module):
             for b in self.blocks
         ]
 
-        def clear_cache(b, *args, **kwargs):
-            torch.cuda.empty_cache()
-            return b(*args, **kwargs)
-
-        if clear_cache_between_blocks:
-            blocks = [partial(clear_cache, b) for b in blocks]
-        return blocks
+        # kernel-bench: label the call site for routing counters; count per-stack block clears (M-CLEAR)
+        return [partial(kr.run_block, self.kb_site, clear_cache_between_blocks, b) for b in blocks]
 
     def forward(
         self,
@@ -772,10 +764,7 @@ class MSAModule(nn.Module):
 
         # Auto broadcast [...,n_msa_sampled, n_token, c_m]
         msa_sample = msa_sample + self.linear_no_bias_s(s_inputs)
-        if z.shape[-2] > 2000 and (not self.training):
-            clear_cache_between_blocks = True
-        else:
-            clear_cache_between_blocks = False
+        clear_cache_between_blocks = kr.clear_between_blocks(z.shape[-2], self.training)
         blocks = self._prep_blocks(
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
@@ -856,6 +845,7 @@ class TemplateEmbedder(nn.Module):
             dropout=dropout,
             blocks_per_ckpt=blocks_per_ckpt,
         )
+        self.pairformer_stack.kb_site = "other"  # template stack (0 blocks at c544c6b)
         self.layernorm_v = LayerNorm(self.c)
         self.linear_no_bias_u = LinearNoBias(in_features=self.c, out_features=self.c_z)
 
@@ -1210,6 +1200,8 @@ class EMPairformerStack(nn.Module):
     Implements Algorithm 17 [PairformerStack] in AF3
     """
 
+    kb_site = "empairformer"  # kernel-bench call-site label
+
     def __init__(
         self,
         n_blocks: int,
@@ -1309,13 +1301,8 @@ class EMPairformerStack(nn.Module):
             for b in self.blocks
         ]
 
-        def clear_cache(b, *args, **kwargs):
-            torch.cuda.empty_cache()
-            return b(*args, **kwargs)
-
-        if clear_cache_between_blocks:
-            blocks = [partial(clear_cache, b) for b in blocks]
-        return blocks
+        # kernel-bench: label the call site for routing counters; count per-stack block clears (M-CLEAR)
+        return [partial(kr.run_block, self.kb_site, clear_cache_between_blocks, b) for b in blocks]
 
     def forward(
         self,
@@ -1359,10 +1346,7 @@ class EMPairformerStack(nn.Module):
                 [..., N_token, c_s]
                 [..., N_token, N_token, c_z]
         """
-        if z.shape[-2] > 2000 and (not self.training):
-            clear_cache_between_blocks = True
-        else:
-            clear_cache_between_blocks = False
+        clear_cache_between_blocks = kr.clear_between_blocks(z.shape[-2], self.training)
 
         blocks = self._prep_blocks(
             pair_mask=pair_mask,

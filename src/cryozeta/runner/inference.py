@@ -30,6 +30,7 @@ from cryozeta.configs.configs_base import configs as configs_base
 from cryozeta.configs.configs_data import data_configs
 from cryozeta.configs.configs_inference import inference_configs
 from cryozeta.data.infer_data_pipeline import get_inference_dataloader
+from cryozeta.model import kernel_routing as kr
 from cryozeta.model.cryozeta import CryoZeta
 from cryozeta.runner.dumper import DataDumper
 from cryozeta.utils.distributed import DIST_WRAPPER
@@ -147,9 +148,13 @@ class InferenceRunner:
             else nullcontext()
         )
 
+        if os.environ.get("CRYOZETA_DROP_BOND_MASK") == "1":
+            # [N_atom, N_atom] int64 training label; inference never reads it (4.4 GiB on GPU at N_token 2048)
+            data["input_feature_dict"].pop("bond_mask", None)
         data = to_device(data, self.device)
+        kr.record_input(data.get("sample_name"), data["input_feature_dict"])  # no-op unless counters are on
         # dump_dir is set per-entry in main() before calling predict()
-        with enable_amp:
+        with enable_amp, kr.timed_forward():  # T3: synchronized model.forward, to_device excluded
             prediction, _, _ = self.model(
                 input_feature_dict=data["input_feature_dict"],
             )
@@ -175,7 +180,7 @@ def _has_interpolation_features(em_file_dir: str, sample_name: str) -> bool:
     )
 
 
-def main(configs: Any) -> None:
+def main(configs: Any, runner: "InferenceRunner | None" = None) -> None:
     # When use_interpolation is requested, pre-check which entries actually
     # have interpolation features in their detection output.  Entries that
     # lack interpolation features are collected into a skip-set so we can
@@ -194,7 +199,7 @@ def main(configs: Any) -> None:
                 )
 
     # Runner
-    runner = InferenceRunner(configs)
+    runner = runner or InferenceRunner(configs)  # kernel-bench Mode B reuses one loaded model
 
     # Data
     logger.info(f"Loading data from\n{configs.input_json_path}")
@@ -288,8 +293,8 @@ def main(configs: Any) -> None:
                     torch.cuda.empty_cache()
 
 
-def cli():
-    """Entry point for the cryozeta-inference console script."""
+def build_configs():
+    """Configs from sys.argv exactly as the console script resolves them (shared with kernel-bench)."""
     configs = {**configs_base, **{"data": data_configs}, **inference_configs}
     configs = parse_configs(
         configs=configs,
@@ -301,7 +306,12 @@ def cli():
         configs.model.input_embedder.p_dim = 114
     else:
         configs.model.input_embedder.p_dim = 99
-    main(configs)
+    return configs
+
+
+def cli():
+    """Entry point for the cryozeta-inference console script."""
+    main(build_configs())
 
 
 if __name__ == "__main__":

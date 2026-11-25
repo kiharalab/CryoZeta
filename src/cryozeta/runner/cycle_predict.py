@@ -78,6 +78,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -258,6 +259,7 @@ def build_arg_str(
     n_sample: int,
     n_step: int,
     num_dl_workers: int,
+    stage_args: list[str] = (),
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
@@ -275,20 +277,30 @@ def build_arg_str(
     parts += ["--data.num_dl_workers", str(num_dl_workers)]
     parts += ["--use_interpolation", "false"]
     parts += ["--overwrite", "true"]
+    parts += stage_args  # validated by parse_args: never one of the flags above
     return " ".join(parts)
 
 
-def run_stage(
-    *,
-    stage_name: str,
-    temp_json: Path,
-    dump_dir: Path,
-    atom_arrays_dir: Path,
-    args: argparse.Namespace,
-    vesper_configs: dict | None = None,
-) -> None:
-    dump_dir.mkdir(parents=True, exist_ok=True)
-    atom_arrays_dir.mkdir(parents=True, exist_ok=True)
+# overwritten after parsing (p_dim) or by the stage JSON's em_file: a stage arg for them would be ignored
+POST_PARSE_FLAGS = {"--model.input_embedder.p_dim", "--em_file_dir"}
+
+
+def attention_conflict(c: Any) -> str | None:
+    """Why primitives.Attention would raise (it takes at most one of these), or why the setting is a no-op."""
+    algos = [c.use_memory_efficient_kernel, c.use_deepspeed_evo_attention or c.use_cuequivariance_attention, c.use_lma]
+    if sum(map(bool, algos)) > 1:
+        return ("at most one attention algorithm (use_memory_efficient_kernel, DS4Sci/cueq attention, use_lma): "
+                "primitives.Attention raises otherwise (DS4Sci/cueq are cycle_predict's own options: pass "
+                "--use_deepspeed_evo_attention false --use_cuequivariance_attention false)")
+    if c.use_flash:
+        return "use_flash: no config passes it to the model (a silent no-op)"
+    if c.use_memory_efficient_kernel:  # Attention has no branch for it (c544c6b too)
+        return "use_memory_efficient_kernel: Attention has no such kernel and runs torch attention (a silent no-op)"
+    return None
+
+
+def stage_configs(*, temp_json: Path, dump_dir: Path, args: argparse.Namespace) -> Any:
+    """One stage's inference configs, parsed by the inference config parser."""
     configs: Any = {**configs_base, **{"data": data_configs}, **inference_configs}
     arg_str = build_arg_str(
         seeds=args.seeds,
@@ -304,12 +316,27 @@ def run_stage(
         n_sample=int(args.sample_N_sample),
         n_step=int(args.sample_N_step),
         num_dl_workers=int(args.num_dl_workers),
+        stage_args=args.stage_args,
     )
-    configs = parse_configs(
+    return parse_configs(
         configs=configs,
         arg_str=arg_str,
         fill_required_with_null=True,
     )
+
+
+def run_stage(
+    *,
+    stage_name: str,
+    temp_json: Path,
+    dump_dir: Path,
+    atom_arrays_dir: Path,
+    args: argparse.Namespace,
+    vesper_configs: dict | None = None,
+) -> None:
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    atom_arrays_dir.mkdir(parents=True, exist_ok=True)
+    configs = stage_configs(temp_json=temp_json, dump_dir=dump_dir, args=args)
     # Sync the module-level configs_base dict so the data pipeline
     # (data_transforms_em.PointPairRepresentationEmbedding) produces
     # features with the correct p_dim.
@@ -569,7 +596,8 @@ def crop_em_points(
     return out_em_pt
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Arguments after a bare ``--`` are extra inference-config flags (``--key value``) for every stage."""
     p = argparse.ArgumentParser(
         description="Run staged inference with EM filtering between stages (auto-generates stages from chains)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -644,7 +672,32 @@ def parse_args() -> argparse.Namespace:
         help="Number of CPU threads for VESPER (default: 8)",
     )
 
-    return p.parse_args()
+    argv = sys.argv[1:] if argv is None else list(argv)
+    cut = argv.index("--") if "--" in argv else len(argv)
+    args = p.parse_args(argv[:cut])
+    args.stage_args = toks = argv[cut + 1 :]
+    flags = toks[::2]
+    if len(toks) % 2 or any(len(t.split()) != 1 for t in toks) or not all(
+        f.startswith("--") and "=" not in f for f in flags
+    ) or any(v.startswith("--") for v in toks[1::2]) or len(set(flags)) != len(flags):
+        p.error("stage args after -- must be distinct '--flag value' pairs (no '=' form, no spaces in a value)")
+    own = {t for t in build_arg_str(
+        seeds="x", checkpoint="x", dump_dir="x", input_json="x", use_deepspeed_evo_attention="x",
+        use_cuequivariance_attention="x", use_cuequivariance_multiplicative_update="x",
+        use_cuequivariance_attention_pair_bias="x", use_opm_tilelang="x", n_cycle=0, n_sample=0, n_step=0,
+        num_dl_workers=0).split() if t.startswith("--")} | POST_PARSE_FLAGS
+    bad = sorted(f for f in flags if any(g.startswith(f) for g in own))  # exact or an argparse prefix
+    if bad:
+        p.error(f"stage args cannot set (or abbreviate) flags cycle_predict sets per stage: {bad}; "
+                "use its own options")
+    try:  # fail here, before any stage work; an unknown flag exits 2 from the config parser itself
+        c = stage_configs(temp_json=Path(args.base_json), dump_dir=Path(args.dump_root), args=args)
+    except Exception as e:
+        p.error(f"stage args rejected by the inference config parser: {e}")
+    why = attention_conflict(c)
+    if why:
+        p.error(why)
+    return args
 
 
 def main() -> None:

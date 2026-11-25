@@ -54,6 +54,7 @@ import torch
 import torch.nn as nn
 from scipy.stats import truncnorm
 
+from cryozeta.model import kernel_routing as kr
 from cryozeta.openfold_local.utils.checkpointing import get_checkpoint_fn
 from cryozeta.openfold_local.utils.tensor_utils import (
     flatten_final_dims,
@@ -294,19 +295,24 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     return s
 
 
-def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> bool:
-    """Check if cuEquivariance triangle_attention would fall back for given params."""
+def cueq_fallback_reason(n_token: int, hidden_dim: int, dtype: torch.dtype) -> str | None:
+    """Why cuEquivariance triangle_attention would fall back (kernel_routing reason), or None."""
     if not cueq_is_installed:
-        return True
+        return "import_error"
     if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
-        return True
+        return "ineligible_shape"
     if dtype == torch.float32:
         if hidden_dim > 32 or hidden_dim % 4 != 0:
-            return True
+            return "ineligible_shape"
     else:
         if hidden_dim > 128 or hidden_dim % 8 != 0:
-            return True
-    return False
+            return "ineligible_shape"
+    return None
+
+
+def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> bool:
+    """Check if cuEquivariance triangle_attention would fall back for given params."""
+    return cueq_fallback_reason(n_token, hidden_dim, dtype) is not None
 
 
 @torch.jit.ignore
@@ -316,8 +322,12 @@ def _cuequivariance_attn(
     v: torch.Tensor,
     bias: torch.Tensor,
     mask: torch.Tensor | None = None,
+    fn: Callable | None = None,
 ) -> torch.Tensor:
-    """Wrapper for cuEquivariance triangle_attention with shape handling."""
+    """Wrapper for cuEquivariance triangle_attention with shape handling.
+
+    ``fn`` swaps in a provider with the same signature/semantics (kernel-bench fpf_k2b).
+    """
     qdim = len(q.shape)
     if qdim == 4:
         q = q.unsqueeze(0)
@@ -338,7 +348,7 @@ def _cuequivariance_attn(
         if mask is not None:
             mask = mask.reshape(flat_batch_size, *mask.shape[-2:])
 
-    o = _cueq_triangle_attention(q=q, k=k, v=v, bias=bias.float(), mask=mask)
+    o = (fn or _cueq_triangle_attention)(q=q, k=k, v=v, bias=bias.float(), mask=mask)
 
     if qdim == 4:
         o = o.squeeze(0)
@@ -545,6 +555,7 @@ class Attention(nn.Module):
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_flash: bool = False,
         flash_mask: torch.Tensor | None = None,
+        use_fpf_k2b: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -607,11 +618,19 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
+        # kernel-bench fpf_k2b provider (raw mask, like cueq); on refusal/failure continue on V0 flags
+        if use_fpf_k2b:
+            o = self._fpf_k2b(q_x, kv_x, biases)
+            if o is not None:
+                return self._wrap_up(o, q_x)
+            if not use_cuequivariance_attention:
+                biases[0] = getattr(self, "inf", 1e9) * (biases[0] - 1)
+
         # cuEquivariance fallback: if shape is unsupported, fall back to DeepSpeed
         if use_cuequivariance_attention:
-            if cueq_would_fall_back(
-                q_x.shape[-2], self.c_hidden, q_x.dtype
-            ):
+            why = cueq_fallback_reason(q_x.shape[-2], self.c_hidden, q_x.dtype)
+            if why is not None:
+                kr.ineligible(why)  # strict + in scope: UNSUPPORTED instead of a silent rescue
                 # Convert raw mask back to inf-scaled for non-cueq paths
                 _inf = getattr(self, "inf", 1e9)
                 biases[0] = _inf * (biases[0] - 1)
@@ -632,12 +651,16 @@ class Attention(nn.Module):
             try:
                 # biases[0] = mask, biases[1] = triangle_bias
                 o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
-            except (RuntimeError, TypeError, OSError):
+                kr.served("cueq")
+            except (RuntimeError, TypeError, OSError) as e:
+                if not kr.rescue_allowed():
+                    raise
                 # Triton compilation failure (e.g. missing ptxas); fall back
                 _inf = getattr(self, "inf", 1e9)
                 biases[0] = _inf * (biases[0] - 1)
                 q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
                 o = _deepspeed_evo_attn(q, k, v, biases)
+                kr.served("ds4sci", "oom" if kr.is_oom(e) else "runtime_error")
                 use_cuequivariance_attention = False
         elif use_deepspeed_evo_attention:
             if len(biases) > 2:
@@ -646,20 +669,42 @@ class Attention(nn.Module):
                     "provide up to two bias terms"
                 )
             o = _deepspeed_evo_attn(q, k, v, biases)
+            kr.served("ds4sci")
         elif use_lma:
             biases = [
                 b.expand((*b.shape[:-2], q_x.shape[-2], kv_x.shape[-2])) for b in biases
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
+            kr.served("lma")
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
+            kr.served("flash")
         else:
             o = _attention(q, k, v, biases)
             o = o.transpose(-2, -3)
+            kr.served("torch")
 
         o = self._wrap_up(o, q_x)
 
+        return o
+
+    def _fpf_k2b(self, q_x, kv_x, biases):
+        """FlashPairformer K2B triangle attention (raw mask in biases[0]); None = not served here."""
+        from cryozeta.model import kernel_providers
+
+        try:
+            q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=False)
+            o = _cuequivariance_attn(q, k, v, biases[1], biases[0], fn=kernel_providers.k2b_attention)
+        except kernel_providers.Ineligible as e:
+            kr.ineligible(e.reason)
+            return None
+        except RuntimeError as e:
+            if not kr.rescue_allowed():
+                raise
+            kr.ineligible("oom" if kr.is_oom(e) else "runtime_error")  # reason only: rescue is allowed here
+            return None
+        kr.served("fpf_k2b")
         return o
 
 
@@ -814,7 +859,9 @@ def _deepspeed_evo_attn(
 
         o = o.to(dtype=orig_dtype)
     else:
-        o = DS4Sci_EvoformerAttention(q, k, v, biases)
+        # Under autocast q/k/v are bf16 but a mask bias built from an fp32 mask stays fp32, and the
+        # kernel requires every input in q's dtype. No-op (same tensor) when the dtypes already match.
+        o = DS4Sci_EvoformerAttention(q, k, v, [b.to(dtype=orig_dtype) for b in biases])
 
     o = o.reshape(orig_shape)
     return o
