@@ -255,12 +255,10 @@ def pointResiduePairRepresentationEmbedding(aatype, asym_ids, Q, A_conf, p, r):
     x = torch.zeros(p, r, 32 + 28 + 64 + 1)
 
     # Amino acid features (32D)
-    aatype_feature = torch.tile(aatype, (p, 1, 1))
-    x[:, :, 0:32] = aatype_feature
+    x[:, :, 0:32] = aatype
 
     # Confidence features (28D)
-    amino_confidence = torch.tile(A_conf.unsqueeze(1), (1, r, 1))
-    x[:, :, 32:60] = amino_confidence
+    x[:, :, 32:60] = A_conf.unsqueeze(1)
 
     # Sinusoidal positional encoding (64D)
     pos_emd = get_1d_sincos_pos_embed_from_grid(64, asym_ids)
