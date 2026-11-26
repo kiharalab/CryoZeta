@@ -486,8 +486,9 @@ class DiffusionTransformer(nn.Module):
         )
         bytes_per_layer = z.numel() // z.size(-1) * self.n_heads * dtype.itemsize
         count = min(len(self.blocks), budget_bytes // bytes_per_layer)
+        # Pack each bias once so repeated attention reads have contiguous keys.
         return tuple(
-            block.attention_pair_bias.project_pair_bias(z)
+            block.attention_pair_bias.project_pair_bias(z).contiguous()
             for block in self.blocks[:count]
         )
 
