@@ -146,14 +146,15 @@ class OuterProductMean(nn.Module):
         if mask is None and not unmasked:
             mask = m.new_ones(m.shape[:-1])
 
+        # The tiled projection only uses PyTorch LayerNorm and Linear.
         if (
             unmasked
             and m.ndim == 3
+            and m.shape[-1] == self.c_m
             and 1024 <= m.shape[0]
             and 1024 <= m.shape[1] <= 4096
             and self.c_m == 256
             and self.c_hidden == 128
-            and torch.cuda.get_device_capability(m.device) == (12, 0)
         ):
             a, b = self._project_by_sequence(m)
         else:
