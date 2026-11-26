@@ -387,39 +387,29 @@ def rearrange_to_dense_trunk(
     assert n_queries & 0x01 == 0
     assert n_keys & 0x01 == 0
 
-    n, _d = q.shape[-2:]
-
-    q_trunked, kv_trunked, padding_info = rearrange_qk_to_dense_trunk(
+    q_trunked, (k_trunked, v_trunked), padding_info = rearrange_qk_to_dense_trunk(
         q=q,
         k=[k, v],
         dim_q=-2,
         dim_k=[-2, -2],
         n_queries=n_queries,
         n_keys=n_keys,
-        compute_mask=False,
+        compute_mask=attn_bias is None,
     )
-    q_pad_length, pad_left, pad_right = (
-        padding_info["q_pad"],
-        padding_info["k_pad_left"],
-        padding_info["k_pad_right"],
-    )
+    q_pad_length = padding_info["q_pad"]
 
-    # Padded_width = n + pad_left + pad_right
     if attn_bias is None:
-        attn_bias = q.new_zeros(
-            *(1,) * len(q.shape[:-2]), n + q_pad_length, n + pad_left + pad_right
-        )
-        attn_bias[..., :n, 0:pad_left] = -inf
-        attn_bias[..., :n, pad_left + n : :] = -inf
-        attn_bias[..., n::, :] = -inf
+        valid = padding_info["mask_trunked"]
+        attn_bias_trunked = q.new_zeros(valid.shape).masked_fill_(~valid, -inf)
     else:
+        pad_left = padding_info["k_pad_left"]
+        pad_right = padding_info["k_pad_right"]
         attn_bias = F.pad(attn_bias, (pad_left, pad_right, 0, q_pad_length), value=-inf)
-
-    concat_split_data = optimized_concat_split(attn_bias, n_queries)
-    attn_bias_trunked = concat_split_data.unfold(
-        -1, n_keys, attn_bias.shape[-1] + n_queries
-    ).transpose(-2, -3)
-    return q_trunked, kv_trunked[0], kv_trunked[1], attn_bias_trunked, q_pad_length
+        concat_split_data = optimized_concat_split(attn_bias, n_queries)
+        attn_bias_trunked = concat_split_data.unfold(
+            -1, n_keys, attn_bias.shape[-1] + n_queries
+        ).transpose(-2, -3)
+    return q_trunked, k_trunked, v_trunked, attn_bias_trunked, q_pad_length
 
 
 def _local_attention(
