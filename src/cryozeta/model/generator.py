@@ -99,6 +99,7 @@ def sample_diffusion(
     inplace_safe: bool = False,
     attn_chunk_size: int | None = None,
     use_cuequivariance_attention_pair_bias: bool = False,
+    pair_bias_cache_mib: int = 0,
 ) -> torch.Tensor:
     """Implements Algorithm 18 in AF3.
     It performances denoising steps from time 0 to time T.
@@ -123,6 +124,7 @@ def sample_diffusion(
         diffusion_chunk_size (Optional[int]): Chunk size for diffusion operation. Defaults to None.
         inplace_safe (bool): Whether to use inplace operations safely. Defaults to False.
         attn_chunk_size (Optional[int]): Chunk size for attention operation. Defaults to None.
+        pair_bias_cache_mib (int): Memory budget for reusable token attention biases, in MiB.
 
     Returns:
         torch.Tensor: the denoised coordinates of x in inference stage
@@ -141,6 +143,20 @@ def sample_diffusion(
         input_feature_dict=input_feature_dict,
         inplace_safe=inplace_safe,
     )
+
+    denoise_options = {}
+    if (
+        pair_bias_cache_mib > 0
+        and noise_schedule.numel() > 2
+        and (N_sample == 1 or diffusion_chunk_size == 1)
+    ):
+        cache = denoise_net.diffusion_transformer.prepare_pair_bias_cache(
+            cached_pair_z,
+            pair_bias_cache_mib * 2**20,
+            use_cuequivariance_attention_pair_bias,
+        )
+        if cache:
+            denoise_options["cached_pair_biases"] = cache
 
     def _chunk_sample_diffusion(chunk_n_sample, inplace_safe):
         # init noise
@@ -195,6 +211,7 @@ def sample_diffusion(
                 inplace_safe=inplace_safe,
                 use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
                 cached_pair_z=cached_pair_z,
+                **denoise_options,
             )
 
             delta = (x_noisy - x_denoised) / t_hat[

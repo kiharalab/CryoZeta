@@ -65,6 +65,7 @@ model_configs = {
     "infer_setting": {
         "chunk_size": ValueMaybeNone(256),
         "sample_diffusion_chunk_size": ValueMaybeNone(1),
+        "diffusion_pair_bias_cache_mib": 64,  # 0 disables the PyTorch attention cache
         "lddt_metrics_sparse_enable": GlobalConfigValue("loss_metrics_sparse_enable"),
         "lddt_metrics_chunk_size": ValueMaybeNone(1),
     },

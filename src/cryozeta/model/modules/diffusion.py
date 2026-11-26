@@ -415,6 +415,7 @@ class DiffusionModule(nn.Module):
         chunk_size: int | None = None,
         use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
+        cached_pair_biases: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         """The raw network to be trained.
         As in EDM equation (7), this is F_theta(c_in * x, c_noise(sigma)).
@@ -523,6 +524,7 @@ class DiffusionModule(nn.Module):
             a=a_token,
             s=s_single,
             z=z_pair,
+            cached_pair_biases=cached_pair_biases,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -569,6 +571,7 @@ class DiffusionModule(nn.Module):
         chunk_size: int | None = None,
         use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
+        cached_pair_biases: tuple[torch.Tensor, ...] = (),
     ) -> torch.Tensor:
         """One step denoise: x_noisy, noise_level -> x_denoised
 
@@ -616,6 +619,7 @@ class DiffusionModule(nn.Module):
             chunk_size=chunk_size,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
             cached_pair_z=cached_pair_z,
+            cached_pair_biases=cached_pair_biases,
         )
 
         # Rescale updates to positions and combine with input positions

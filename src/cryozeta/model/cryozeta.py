@@ -354,6 +354,9 @@ class CryoZeta(nn.Module):
             {
                 "attn_chunk_size": self.configs.infer_setting.chunk_size,
                 "diffusion_chunk_size": self.configs.infer_setting.sample_diffusion_chunk_size,
+                "pair_bias_cache_mib": self.configs.infer_setting.get(
+                    "diffusion_pair_bias_cache_mib", 0
+                ),
             }
         )
         return autocasting_disable_decorator(self.configs.skip_amp.sample_diffusion)(
