@@ -18,6 +18,10 @@ import torch
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 
+_MANIFOLD_MIN_BIN = 2.3125
+_MANIFOLD_MAX_BIN = 21.6875
+_MANIFOLD_BINS = 50
+
 
 def make_one_hot(x, num_classes):
     """Convert integer tensor to one-hot encoding.
@@ -68,9 +72,9 @@ def manifold_distance(
     distance,
     high_res=True,
     eps=1e-9,
-    min_bin=2.3125,
-    max_bin=21.6875,
-    no_bins=50,
+    min_bin=_MANIFOLD_MIN_BIN,
+    max_bin=_MANIFOLD_MAX_BIN,
+    no_bins=_MANIFOLD_BINS,
 ):
     """Bin pairwise distances, using within-cluster shortest paths at low resolution.
 
@@ -201,39 +205,31 @@ def PointPairRepresentationEmbedding(
     # Distance feature: binned pairwise distances (39D)
     distance = torch.cdist(Q, Q)
     distance_bins = _distance_bin_indices(distance, min_bin, max_bin, no_bins)
-    distance_feature = make_one_hot(distance_bins, no_bins)
-    w_point[:, :, 3:42] = distance_feature
+    if no_bins == 39:
+        w_point[:, :, 3:42].scatter_(-1, distance_bins.unsqueeze(-1), 1)
+    else:
+        w_point[:, :, 3:42] = make_one_hot(distance_bins, no_bins)
 
     # Confidence feature: endpoint confidence values (6D)
-    point_confidence = take_confidence_endpoints(ca_prob)
+    w_point[:, :, 42:45] = ca_prob[None, :, :]
+    w_point[:, :, 45:48] = ca_prob[:, None, :]
 
     if use_interpolate_confidence:
         # Interpolated confidence (15D)
-        interpolate_confidence = M_conf
-        interpolate_confidence = interpolate_confidence.view(p, p, -1)
-        confidence_feature = torch.cat(
-            [point_confidence, interpolate_confidence], dim=-1
-        )
-        w_point[:, :, 42:63] = confidence_feature
-
-        # Manifold distance feature (50D)
-        manifold_distance_feature = manifold_distance(assign_conf, distance)
-        w_point[:, :, 63:113] = manifold_distance_feature
-
-        # Manifold connection feature (1D)
-        manifold_connection_feature = manifold_connection(assign_conf, num_clust)
-        w_point[:, :, 113] = manifold_connection_feature
+        w_point[:, :, 48:63] = M_conf.view(p, p, 15)
+        manifold_start = 63
     else:
-        # Confidence feature (6D)
-        w_point[:, :, 42:48] = point_confidence
+        manifold_start = 48
 
-        # Manifold distance feature (50D)
-        manifold_distance_feature = manifold_distance(assign_conf, distance)
-        w_point[:, :, 48:98] = manifold_distance_feature
-
-        # Manifold connection feature (1D)
-        manifold_connection_feature = manifold_connection(assign_conf, num_clust)
-        w_point[:, :, 98] = manifold_connection_feature
+    # High-resolution manifold bins use the original pairwise distances.
+    manifold_end = manifold_start + _MANIFOLD_BINS
+    manifold_bins = _distance_bin_indices(
+        distance, _MANIFOLD_MIN_BIN, _MANIFOLD_MAX_BIN, _MANIFOLD_BINS
+    )
+    w_point[:, :, manifold_start:manifold_end].scatter_(
+        -1, manifold_bins.unsqueeze(-1), 1
+    )
+    w_point[:, :, manifold_end] = manifold_connection(assign_conf, num_clust)
 
     return w_point
 
