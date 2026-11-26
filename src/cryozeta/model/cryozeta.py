@@ -357,6 +357,9 @@ class CryoZeta(nn.Module):
                 "pair_bias_cache_mib": self.configs.infer_setting.get(
                     "diffusion_pair_bias_cache_mib", 0
                 ),
+                "cache_atom_conditioning": self.configs.infer_setting.get(
+                    "cache_diffusion_atom_conditioning", False
+                ),
             }
         )
         return autocasting_disable_decorator(self.configs.skip_amp.sample_diffusion)(

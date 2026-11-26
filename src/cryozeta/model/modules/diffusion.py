@@ -21,6 +21,7 @@ from cryozeta.model.modules.primitives import LinearNoBias, Transition
 from cryozeta.model.modules.transformer import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
+    AtomConditioning,
     DiffusionTransformer,
 )
 from cryozeta.model.utils import expand_at_dim
@@ -416,6 +417,7 @@ class DiffusionModule(nn.Module):
         use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
         cached_pair_biases: tuple[torch.Tensor, ...] = (),
+        cached_atom_conditioning: AtomConditioning | None = None,
     ) -> torch.Tensor:
         """The raw network to be trained.
         As in EDM equation (7), this is F_theta(c_in * x, c_noise(sigma)).
@@ -510,6 +512,7 @@ class DiffusionModule(nn.Module):
                 z=z_pair,
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
+                cached_conditioning=cached_atom_conditioning,
             )
         # Full self-attention on token level.
         if inplace_safe:
@@ -572,6 +575,7 @@ class DiffusionModule(nn.Module):
         use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
         cached_pair_biases: tuple[torch.Tensor, ...] = (),
+        cached_atom_conditioning: AtomConditioning | None = None,
     ) -> torch.Tensor:
         """One step denoise: x_noisy, noise_level -> x_denoised
 
@@ -620,6 +624,7 @@ class DiffusionModule(nn.Module):
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
             cached_pair_z=cached_pair_z,
             cached_pair_biases=cached_pair_biases,
+            cached_atom_conditioning=cached_atom_conditioning,
         )
 
         # Rescale updates to positions and combine with input positions

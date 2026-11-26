@@ -100,6 +100,7 @@ def sample_diffusion(
     attn_chunk_size: int | None = None,
     use_cuequivariance_attention_pair_bias: bool = False,
     pair_bias_cache_mib: int = 0,
+    cache_atom_conditioning: bool = False,
 ) -> torch.Tensor:
     """Implements Algorithm 18 in AF3.
     It performances denoising steps from time 0 to time T.
@@ -125,6 +126,7 @@ def sample_diffusion(
         inplace_safe (bool): Whether to use inplace operations safely. Defaults to False.
         attn_chunk_size (Optional[int]): Chunk size for attention operation. Defaults to None.
         pair_bias_cache_mib (int): Memory budget for reusable token attention biases, in MiB.
+        cache_atom_conditioning (bool): Reuse reference atom features across diffusion steps.
 
     Returns:
         torch.Tensor: the denoised coordinates of x in inference stage
@@ -145,18 +147,26 @@ def sample_diffusion(
     )
 
     denoise_options = {}
-    if (
-        pair_bias_cache_mib > 0
-        and noise_schedule.numel() > 2
-        and (N_sample == 1 or diffusion_chunk_size == 1)
-    ):
-        cache = denoise_net.diffusion_transformer.prepare_pair_bias_cache(
-            cached_pair_z,
-            pair_bias_cache_mib * 2**20,
-            use_cuequivariance_attention_pair_bias,
-        )
-        if cache:
-            denoise_options["cached_pair_biases"] = cache
+    if noise_schedule.numel() > 2 and (N_sample == 1 or diffusion_chunk_size == 1):
+        if pair_bias_cache_mib > 0:
+            biases = denoise_net.diffusion_transformer.prepare_pair_bias_cache(
+                cached_pair_z,
+                pair_bias_cache_mib * 2**20,
+                use_cuequivariance_attention_pair_bias,
+            )
+            if biases:
+                denoise_options["cached_pair_biases"] = biases
+        if cache_atom_conditioning and cached_pair_z.is_cuda:
+            encoder = denoise_net.atom_attention_encoder
+            if not encoder.training and not torch.is_grad_enabled():
+                denoise_options["cached_atom_conditioning"] = (
+                    encoder.prepare_conditioning(
+                        input_feature_dict,
+                        s_trunk.unsqueeze(-3),
+                        cached_pair_z.unsqueeze(-4),
+                        inplace_safe,
+                    )
+                )
 
     def _chunk_sample_diffusion(chunk_n_sample, inplace_safe):
         # init noise
