@@ -298,22 +298,17 @@ def rearrange_qk_to_dense_trunk(
     ]
 
     if compute_mask:
-        pad_mask = q[0].new_ones(
-            *(1,) * len(q[0].shape[:-2]),
-            n + q_pad_length,
-            n + pad_left + pad_right,
-            requires_grad=False,
+        # A pair is valid when both indices are inside the unpadded sequence.
+        # Construct only the local windows that attention will consume.
+        starts = torch.arange(n_trunks, device=q[0].device)[:, None] * n_queries
+        query_indices = starts + torch.arange(n_queries, device=q[0].device)
+        key_indices = starts + torch.arange(n_keys, device=q[0].device) - pad_left
+        query_valid = query_indices < n
+        key_valid = (key_indices >= 0) & (key_indices < n)
+        pad_mask_trunked = query_valid[..., None] & key_valid[:, None, :]
+        pad_mask_trunked = pad_mask_trunked.view(
+            *(1,) * len(q[0].shape[:-2]), n_trunks, n_queries, n_keys
         )
-        pad_mask[..., :n, 0:pad_left] = 0
-        pad_mask[..., :n, pad_left + n : :] = 0
-        pad_mask[..., n::, :] = 0
-
-        concat_split_data = optimized_concat_split(pad_mask, n_queries)
-        pad_mask_trunked = (
-            concat_split_data.unfold(
-                -1, n_keys, pad_mask.size(-1) + n_queries
-            ).transpose(-2, -3)
-        ).bool()
     else:
         pad_mask_trunked = None
 
