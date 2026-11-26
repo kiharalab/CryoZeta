@@ -49,6 +49,20 @@ def manifold_connection(assign_conf, num_clust=None):
     return manifold_connection
 
 
+def _distance_bin_indices(distance, min_bin, max_bin, no_bins):
+    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
+    # Nonnegative, ascending distance thresholds keep linspace ordered.
+    if not 0 <= min_bin <= max_bin <= torch.finfo(boundaries.dtype).max:
+        return torch.sum(distance[..., None] > boundaries, dim=-1)
+
+    # A value equal to a boundary belongs in the lower bin. A NaN compares
+    # false against every boundary, so restore bin zero after bucketizing.
+    indices = torch.bucketize(distance.contiguous(), boundaries, right=False)
+    if distance.is_floating_point():
+        indices.masked_fill_(distance.isnan(), 0)
+    return indices
+
+
 def manifold_distance(
     assign_conf,
     distance,
@@ -58,11 +72,12 @@ def manifold_distance(
     max_bin=21.6875,
     no_bins=50,
 ):
-    """Compute shortest-path distances within clusters and bin them.
+    """Bin pairwise distances, using within-cluster shortest paths at low resolution.
 
     Args:
         assign_conf: Tensor of shape (p,) with cluster assignments
         distance: Pairwise distance matrix of shape (p, p)
+        high_res: Whether to bin the input distances directly
         eps: Small epsilon value
         min_bin: Minimum bin boundary
         max_bin: Maximum bin boundary
@@ -71,24 +86,23 @@ def manifold_distance(
     Returns:
         One-hot binned distance features of shape (p, p, no_bins)
     """
-    clusters = torch.unique(assign_conf)
-    max_dist = torch.max(distance)
-    ret_manifold = torch.zeros_like(distance).double()
-
-    for cluster in clusters:
-        mask = torch.where(assign_conf == cluster, 1, 0)
-        mask = mask[..., None] * mask[None, ...]
-        dist = torch.where(mask == 1, distance, max_dist + 1)
-        graph = csr_matrix(dist)
-        dist_matrix = shortest_path(csgraph=graph, directed=False)
-        dist_matrix = torch.tensor(dist_matrix)
-        ret_manifold += dist_matrix * mask
-
-    # Bin distances
     if not high_res:
+        clusters = torch.unique(assign_conf)
+        max_dist = torch.max(distance)
+        ret_manifold = torch.zeros_like(distance).double()
+
+        for cluster in clusters:
+            mask = torch.where(assign_conf == cluster, 1, 0)
+            mask = mask[..., None] * mask[None, ...]
+            dist = torch.where(mask == 1, distance, max_dist + 1)
+            graph = csr_matrix(dist)
+            dist_matrix = shortest_path(csgraph=graph, directed=False)
+            dist_matrix = torch.tensor(dist_matrix)
+            ret_manifold += dist_matrix * mask
+
         distance = ret_manifold
-    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
-    distance_bins = torch.sum(distance[..., None] > boundaries, dim=-1)
+
+    distance_bins = _distance_bin_indices(distance, min_bin, max_bin, no_bins)
     distance_feature = make_one_hot(distance_bins, no_bins)
 
     return distance_feature
@@ -185,9 +199,8 @@ def PointPairRepresentationEmbedding(
     w_point[:, :, 0:3] = orientation / norm
 
     # Distance feature: binned pairwise distances (39D)
-    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
     distance = torch.cdist(Q, Q)
-    distance_bins = torch.sum(distance[..., None] > boundaries, dim=-1)
+    distance_bins = _distance_bin_indices(distance, min_bin, max_bin, no_bins)
     distance_feature = make_one_hot(distance_bins, no_bins)
     w_point[:, :, 3:42] = distance_feature
 
