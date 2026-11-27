@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import functools
+import os
+
 import torch
 import torch.nn.functional as F
 try:
@@ -263,6 +265,62 @@ def opm_tilelang(a, b, weight, bias, norm):
     return out
 
 
+def _use_reoriented_opm(a, b, weight, bias, norm, chunk_size):
+    if os.environ.get("CRYOZETA_OPM_REORIENTED") != "1":
+        return False
+    if not (
+        chunk_size == 16
+        and a.shape == b.shape == (1980, 1980, 128)
+        and a.is_cuda
+        and bias is not None
+        and b.device == a.device == weight.device == bias.device == norm.device
+        and a.dtype == b.dtype == norm.dtype == torch.bfloat16
+        and weight.shape == (128, 128 * 128)
+        and bias.shape == (128,)
+        and weight.dtype == bias.dtype == torch.float32
+        and norm.ndim == 0
+        and a.is_contiguous()
+        and b.is_contiguous()
+        and weight.is_contiguous()
+        and bias.is_contiguous()
+        and not torch.is_grad_enabled()
+        and not torch.compiler.is_compiling()
+        and torch.is_autocast_enabled("cuda")
+        and torch.get_autocast_dtype("cuda") == torch.bfloat16
+        and torch.__version__ == "2.15.0+cu132"
+        and torch.backends.cuda.preferred_blas_library().name == "Cublas"
+        and torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction is True
+    ):
+        return False
+    return torch.cuda.get_device_name(a.device) == "NVIDIA RTX A6000"
+
+
+def _opm_reoriented(a, b, weight, bias, norm):
+    n, s, h = a.shape
+    chunk_size = 16
+    # Group contraction columns by hidden channel, then residue, so the
+    # projection can consume the BF16 outer product without a layout copy.
+    packed_b = b.permute(1, 2, 0).contiguous().view(1, s, h * n)
+    out = a.new_empty(n, n, weight.shape[0])
+    for start in range(0, n, chunk_size):
+        end = min(start + chunk_size, n)
+        if end - start < chunk_size:
+            # cuBLAS can select a different projection reduction for tails.
+            del packed_b
+            sequence_major_b = b.transpose(0, 1).contiguous()
+            outer = torch.einsum("csh,snd->cnhd", a[start:end], sequence_major_b)
+            out[start:end] = F.linear(outer.flatten(-2), weight, bias)
+            del sequence_major_b, outer
+            break
+        lhs = a[start:end].transpose(1, 2).contiguous().view(1, chunk_size * h, s)
+        outer = torch.bmm(lhs, packed_b).view(chunk_size, h * h, n)
+        projected = torch.baddbmm(bias[:, None], weight.expand(chunk_size, -1, -1), outer)
+        out[start:end] = projected.transpose(1, 2)
+        del outer, projected
+    out /= norm.view(1, 1)
+    return out
+
+
 def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
     """Memory-efficient OPM using cuBLAS with N1-chunking.
 
@@ -272,6 +330,9 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
     Runs entirely in the input dtype (BF16 or FP32). Under BF16 this matches
     the original PyTorch OPM behavior (einsum + F.linear both in BF16).
     """
+    if _use_reoriented_opm(a, b, weight, bias, norm, chunk_size):
+        return _opm_reoriented(a, b, weight, bias, norm)
+
     is_3d = False
     if a.dim() == 3:
         is_3d = True

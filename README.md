@@ -205,6 +205,14 @@ bash /path/to/CryoZeta/large_inference_demo.sh --example 9nb5
 
 This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
 
+Set `CRYOZETA_OPM_REORIENTED=1` to test the experimental cuBLAS OPM route for
+unmasked BF16 inference with 1980 residues, a reduction length of 1980, and
+128 hidden channels. It runs on the RTX A6000 with PyTorch `2.15.0+cu132`,
+CUDA BF16 autocast, and the default BF16 reduction setting. It keeps the
+original OPM path for the final 12 rows and for other configurations.
+On 9BH4, it preserved the exported results bit for bit and increased peak
+CUDA reserved memory by 1.29 GiB.
+
 ### Prepare Input JSON
 
 The input is a JSON file containing a list of entries. Each entry describes one
