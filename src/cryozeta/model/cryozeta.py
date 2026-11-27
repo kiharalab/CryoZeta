@@ -496,20 +496,20 @@ class CryoZeta(nn.Module):
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
             )
-        keys_to_delete = []
-        for key in input_feature_dict.keys():
-            if "template_" in key or key in [
+        # The raw EM embeddings and the final point-pair state are trunk-only.
+        del _p
+        for key in tuple(input_feature_dict):
+            if "template_" in key or key in {
                 "msa",
                 "has_deletion",
                 "deletion_value",
                 "profile",
                 "deletion_mean",
                 "token_bonds",
-            ]:
-                keys_to_delete.append(key)
-
-        for key in keys_to_delete:
-            del input_feature_dict[key]
+                "p",
+                "pz",
+            }:
+                del input_feature_dict[key]
         torch.cuda.empty_cache()
 
         # Offload trunk modules to CPU — they are never used again in this loop.
@@ -561,7 +561,7 @@ class CryoZeta(nn.Module):
             pred_dict["point_noise_logits"] = self.point_noise_head(pz.unsqueeze(0))
 
         # Free tensors only needed by prediction heads
-        del pz, _p
+        del pz
 
         ca_mask = input_feature_dict["atom_array"].centre_atom_mask
         ca_mask = ca_mask.astype(bool)
