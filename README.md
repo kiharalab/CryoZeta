@@ -211,7 +211,12 @@ unmasked BF16 inference with 1980 residues, a reduction length of 1980, and
 CUDA BF16 autocast, and the default BF16 reduction setting. It keeps the
 original OPM path for the final 12 rows and for other configurations.
 On 9BH4, it preserved the exported results bit for bit and increased peak
-CUDA reserved memory by 1.29 GiB.
+CUDA reserved memory by 1.29 GiB with the default allocator. Setting
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` alongside the OPM opt-in
+reduced the measured whole-run reserved peak from 35.38 GiB to 26.11 GiB on
+that workload with identical results. Features to export took 612.33 s with
+expandable segments, 609.30 s with the OPM opt-in alone, and 648.68 s on the
+baseline.
 
 ### Prepare Input JSON
 
