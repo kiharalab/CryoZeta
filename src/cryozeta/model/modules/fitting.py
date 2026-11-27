@@ -166,6 +166,8 @@ def FitModelPointsTeaser(
     map_path: str | None = None,
     resolution: float | None = None,
     contour_level: float | None = None,
+    *,
+    score_map: MapScorer | None = None,
 ) -> torch.Tensor | None:
     """
     Fit model points to support points using TEASER++ followed by GICP refinement.
@@ -191,10 +193,12 @@ def FitModelPointsTeaser(
         map_path: Optional path to EM map file (default: None)
         resolution: Optional resolution of EM map (default: None)
         contour_level: Optional contour level for EM map (default: None)
+        score_map: Optional scorer shared across fitting methods.
     Returns:
         Transformed all_atom coordinates, or None if fitting failed
     """
-    score_map = MapScorer(map_path, resolution, contour_level)
+    if score_map is None:
+        score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -604,8 +608,11 @@ def FitModelPoints(
     map_path: str | None = None,
     resolution: float | None = None,
     contour_level: float | None = None,
+    *,
+    score_map: MapScorer | None = None,
 ):
-    score_map = MapScorer(map_path, resolution, contour_level)
+    if score_map is None:
+        score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample

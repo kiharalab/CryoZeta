@@ -25,6 +25,7 @@ from loguru import logger
 from torch.profiler import record_function
 from tqdm import tqdm
 
+from cryozeta.em.strucblur import MapScorer
 from cryozeta.model import sample_confidence
 from cryozeta.model.generator import (
     InferenceNoiseScheduler,
@@ -583,6 +584,11 @@ class CryoZeta(nn.Module):
         )
 
         with record_function("model_fitting"):
+            score_map = MapScorer(
+                input_feature_dict.get("map_path"),
+                input_feature_dict.get("resolution"),
+                input_feature_dict.get("contour_level"),
+            )
             coordinate_svd_08, recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08 = (
                 FitModelPoints(
                     pred_dict["point_residue_logits"],
@@ -594,9 +600,7 @@ class CryoZeta(nn.Module):
                     0.8,
                     input_feature_dict["dump_dir"],
                     pdb_id,
-                    map_path=input_feature_dict.get("map_path", None),
-                    resolution=input_feature_dict.get("resolution", None),
-                    contour_level=input_feature_dict.get("contour_level", None),
+                    score_map=score_map,
                 )
             )
             if coordinate_svd_08 is None:
@@ -612,9 +616,7 @@ class CryoZeta(nn.Module):
                     0.4,
                     input_feature_dict["dump_dir"],
                     pdb_id,
-                    map_path=input_feature_dict.get("map_path", None),
-                    resolution=input_feature_dict.get("resolution", None),
-                    contour_level=input_feature_dict.get("contour_level", None),
+                    score_map=score_map,
                 )
             )
             if coordinate_svd_04 is None:
@@ -625,11 +627,10 @@ class CryoZeta(nn.Module):
                     pred_dict["coordinate"],
                     elements,
                     input_feature_dict["all_support_points"],
-                    map_path=input_feature_dict.get("map_path", None),
-                    resolution=input_feature_dict.get("resolution", None),
-                    contour_level=input_feature_dict.get("contour_level", None),
+                    score_map=score_map,
                 )
             )
+            del score_map
             if coordinate_teaser is None:
                 logger.info("FitModelPointsTeaser returned None")
         pred_dict["coordinate_svd_0.8"] = coordinate_svd_08
