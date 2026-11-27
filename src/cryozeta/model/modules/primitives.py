@@ -142,9 +142,9 @@ class Transition(nn.Module):
             x = x.reshape(-1, dim_size)
             chunk_num = 1 if size < 3200 else 8
             chunks = torch.chunk(x, chunk_num, dim=-2)
-            outputs = torch.empty(
-                (x.shape[0], self.c_in), dtype=x.dtype, device=x.device
-            )
+            outputs = None
+            if chunk_num != 1:
+                outputs = x.new_empty((x.shape[0], self.c_in))
             start = 0
             for chunk in chunks:
                 y = self.layernorm1(chunk)
@@ -155,6 +155,9 @@ class Transition(nn.Module):
                 b *= a
                 del a
                 b = self.linear_no_bias(b)
+                if outputs is None:
+                    # The preallocated output would cast the projection to x.dtype.
+                    return b.to(dtype=x.dtype).reshape(*other_dims, self.c_in)
                 outputs[start : start + b.shape[0]] = b
                 start += b.shape[0]
                 del b
