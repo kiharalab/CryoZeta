@@ -193,6 +193,8 @@ class CryoZeta(nn.Module):
         N_cycle: int,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
+        *,
+        release_em_inputs: bool = False,
     ) -> tuple[torch.Tensor, ...]:
         """
         The forward pass from the input to empairformer output
@@ -202,6 +204,7 @@ class CryoZeta(nn.Module):
             N_cycle (int): number of cycles
             inplace_safe (bool): Whether it is safe to use inplace operations. Defaults to False.
             chunk_size (Optional[int]): Chunk size for memory-efficient operations. Defaults to None.
+            release_em_inputs (bool): Remove the raw EM pair features after embedding.
 
         Returns:
             Tuple[torch.Tensor, ...]: s_inputs, s, z
@@ -211,13 +214,17 @@ class CryoZeta(nn.Module):
             s_inputs, pz_inputs, p_inputs = self.input_embedder(
                 input_feature_dict, inplace_safe=False, chunk_size=chunk_size
             )  # [..., N_token, 449]
+            if release_em_inputs:
+                del input_feature_dict["p"], input_feature_dict["pz"]
             s_init = self.linear_no_bias_sinit(s_inputs)  #  [..., N_token, c_s]
             z_init = (
                 self.linear_no_bias_zinit1(s_init)[..., None, :]
                 + self.linear_no_bias_zinit2(s_init)[..., None, :, :]
             )  #  [..., N_token, N_token, c_z]
             pz_init = self.linear_no_bias_pzinit(pz_inputs)
+            del pz_inputs
             p_init = self.linear_no_bias_pinit(p_inputs)
+            del p_inputs
 
             if inplace_safe:
                 z_init += self.relative_position_encoding(input_feature_dict)
@@ -495,8 +502,9 @@ class CryoZeta(nn.Module):
                 N_cycle=N_cycle,
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
+                release_em_inputs=inplace_safe,
             )
-        # The raw EM embeddings and the final point-pair state are trunk-only.
+        # The final point-pair state is trunk-only.
         del _p
         for key in tuple(input_feature_dict):
             if "template_" in key or key in {
