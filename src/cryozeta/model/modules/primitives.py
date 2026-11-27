@@ -143,17 +143,31 @@ class Transition(nn.Module):
             size = x.shape[-2]
             x = x.reshape(-1, dim_size)
             budget = self.inference_hidden_budget_bytes
-            backend = os.getenv("CRYOZETA_TRANSITION_BACKEND") if budget is not None else None
-            if (
-                backend == "triton"
+            backend = (
+                os.getenv("CRYOZETA_TRANSITION_BACKEND", "auto")
+                if budget is not None
+                else None
+            )
+            can_fuse = (
+                backend in ("auto", "triton")
                 and x.is_cuda
                 and not torch.is_grad_enabled()
                 and not torch.is_autocast_enabled("cuda")
                 and not torch.compiler.is_compiling()
                 and x.dtype == torch.float32
                 and (self.c_in, self.n) == (128, 4)
+            )
+            if (
+                can_fuse
+                and backend == "auto"
+                and torch.cuda.get_device_capability(x.device) == (8, 6)
             ):
-                from cryozeta.model.modules.triton_transition import try_fused_transition
+                # The SM86 TF32x3 tile was validated in the production pipeline.
+                backend = "triton"
+            if can_fuse and backend == "triton":
+                from cryozeta.model.modules.triton_transition import (
+                    try_fused_transition,
+                )
 
                 fused = try_fused_transition(
                     x,

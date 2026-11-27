@@ -3,10 +3,9 @@
 One kernel computes, per row tile, the LayerNorm, both c_in -> n*c_in
 projections, the silu(a) * b gate, and the n*c_in -> c_in output projection,
 accumulating in FP32 with an explicitly selected input precision
-(``CRYOZETA_TRITON_TRANSITION_PRECISION``: ``ieee`` by default, ``tf32x3``
-opt-in; both stay in FP32 lanes, no FP16 truncation anywhere). Nothing but
-the output ever leaves the kernel, so the hidden-projection staging of the
-PyTorch path (two n*c_in tiles per row chunk) disappears entirely.
+(``CRYOZETA_TRITON_TRANSITION_PRECISION`` defaults to ``tf32x3`` on SM86
+and ``ieee`` elsewhere). Only the output is stored, so the two
+hidden projection tiles stay inside the kernel.
 
 Weights are read in their original contiguous layouts (``wa``/``wb`` are
 [H, CIN], ``wo`` is [CIN, H]); tiles load in native memory order and are
@@ -193,7 +192,8 @@ def try_fused_transition(
     if capability[0] < 8:
         return None
 
-    precision = os.getenv("CRYOZETA_TRITON_TRANSITION_PRECISION", "ieee")
+    default_precision = "tf32x3" if capability == (8, 6) else "ieee"
+    precision = os.getenv("CRYOZETA_TRITON_TRANSITION_PRECISION", default_precision)
     if precision not in _PRECISIONS:
         raise ValueError(
             f"Unknown Triton Transition precision {precision!r}, "
