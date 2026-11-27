@@ -98,6 +98,8 @@ class ConfidenceHead(nn.Module):
             dropout=pairformer_dropout,
             blocks_per_ckpt=blocks_per_ckpt,
         )
+        for block in self.pairformer_stack.blocks:
+            block.pair_transition.inference_hidden_budget_bytes = 1024**3
         self.linear_no_bias_pae = LinearNoBias(
             in_features=self.c_z, out_features=self.b_pae
         )

@@ -13,6 +13,7 @@
 # under GPLv3.
 
 import math
+import os
 from functools import partial
 
 import torch
@@ -110,6 +111,7 @@ class Transition(nn.Module):
         super().__init__()
         self.n = n
         self.c_in = c_in
+        self.inference_hidden_budget_bytes: int | None = None
         self.layernorm1 = LayerNorm(c_in)
         self.linear_no_bias_a = LinearNoBias(in_features=c_in, out_features=n * c_in)
         self.linear_no_bias_b = LinearNoBias(in_features=c_in, out_features=n * c_in)
@@ -140,10 +142,44 @@ class Transition(nn.Module):
             dim_size = x.shape[-1]
             size = x.shape[-2]
             x = x.reshape(-1, dim_size)
-            chunk_num = 1 if size < 3200 else 8
-            chunks = torch.chunk(x, chunk_num, dim=-2)
+            budget = self.inference_hidden_budget_bytes
+            backend = os.getenv("CRYOZETA_TRANSITION_BACKEND") if budget is not None else None
+            if (
+                backend == "triton"
+                and x.is_cuda
+                and not torch.is_grad_enabled()
+                and not torch.is_autocast_enabled("cuda")
+                and not torch.compiler.is_compiling()
+                and x.dtype == torch.float32
+                and (self.c_in, self.n) == (128, 4)
+            ):
+                from cryozeta.model.modules.triton_transition import try_fused_transition
+
+                fused = try_fused_transition(
+                    x,
+                    self.layernorm1.weight,
+                    self.layernorm1.bias,
+                    self.linear_no_bias_a.weight,
+                    self.linear_no_bias_b.weight,
+                    self.linear_no_bias.weight,
+                    self.layernorm1.eps,
+                )
+                if fused is not None:
+                    return fused.reshape(*other_dims, self.c_in)
+            chunks = x.chunk(1 if size < 3200 else 8, dim=0)
+            if (
+                backend in ("torch", "triton")
+                and budget is not None
+                and x.is_cuda
+                and not torch.is_grad_enabled()
+            ):
+                # Each row needs two hidden projections before the gated product.
+                bytes_per_row = 2 * self.n * self.c_in * x.element_size()
+                max_rows = max(1, budget // bytes_per_row)
+                if chunks[0].size(0) > max_rows:
+                    chunks = x.split(max_rows, dim=0)
             outputs = None
-            if chunk_num != 1:
+            if len(chunks) > 1:
                 outputs = x.new_empty((x.shape[0], self.c_in))
             start = 0
             for chunk in chunks:
