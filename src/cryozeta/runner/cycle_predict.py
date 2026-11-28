@@ -322,6 +322,7 @@ def build_arg_str(
     use_fpf_trimul: str = "false",
     use_triton_confidence_transition: str = "false",
     use_confidence_head: str = "false",
+    transition_chunk_budget_mib: int = 0,
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
@@ -340,6 +341,10 @@ def build_arg_str(
     parts += ["--infer_setting.triangle_attention_backend", triangle_attention_backend]
     parts += ["--infer_setting.use_fpf_trimul", use_fpf_trimul]
     parts += ["--infer_setting.use_confidence_head", use_confidence_head]
+    parts += [
+        "--infer_setting.transition_chunk_budget_mib",
+        str(transition_chunk_budget_mib),
+    ]
     parts += [
         "--infer_setting.use_triton_confidence_transition",
         use_triton_confidence_transition,
@@ -384,6 +389,7 @@ def run_stage(
         triangle_attention_backend=args.triangle_attention_backend,
         use_fpf_trimul=args.use_fpf_trimul,
         use_confidence_head=args.use_confidence_head,
+        transition_chunk_budget_mib=args.transition_chunk_budget_mib,
         use_triton_confidence_transition=args.use_triton_confidence_transition,
     )
     configs = parse_configs(
@@ -699,6 +705,12 @@ def parse_args() -> argparse.Namespace:
         dest="triangle_attention_backend",
         choices=("default", "triton", "fpf_k2b"),
         default="default",
+    )
+    p.add_argument(
+        "--infer_setting.transition_chunk_budget_mib",
+        dest="transition_chunk_budget_mib",
+        type=int,
+        default=0,
     )
     for name in (
         "use_fpf_trimul",

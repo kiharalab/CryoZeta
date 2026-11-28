@@ -111,6 +111,7 @@ class Transition(nn.Module):
         self.n = n
         self.c_in = c_in
         self.inference_hidden_budget_bytes: int | None = None
+        self.inference_chunk_budget_bytes = 0
         self.layernorm1 = LayerNorm(c_in)
         self.linear_no_bias_a = LinearNoBias(in_features=c_in, out_features=n * c_in)
         self.linear_no_bias_b = LinearNoBias(in_features=c_in, out_features=n * c_in)
@@ -191,6 +192,19 @@ class Transition(nn.Module):
                 # bound the two live hidden projections for this pair shape.
                 chunk_count = 4
             chunks = x.chunk(chunk_count, dim=0)
+            chunk_budget = getattr(self, "inference_chunk_budget_bytes", 0)
+            if (
+                chunk_budget
+                and x.is_cuda
+                and x.dtype in (torch.float32, torch.bfloat16, torch.float16)
+                and not torch.is_grad_enabled()
+                and not torch.compiler.is_compiling()
+            ):
+                # Budget one normalized input and both hidden projections per row.
+                bytes_per_row = (1 + 2 * self.n) * self.c_in * x.element_size()
+                max_rows = max(1, chunk_budget // bytes_per_row)
+                if chunks[0].size(0) > max_rows:
+                    chunks = x.split(max_rows, dim=0)
             if can_fuse and budget is not None:
                 # Each row needs two hidden projections before the gated product.
                 bytes_per_row = 2 * self.n * self.c_in * x.element_size()

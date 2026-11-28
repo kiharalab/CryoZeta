@@ -51,7 +51,7 @@ from .modules.fitting import (
     SetPntResAffinity,
 )
 from .modules.head import DistogramHead, PointNoiseHead, PointResidueClassHead
-from .modules.primitives import LinearNoBias
+from .modules.primitives import LinearNoBias, Transition
 
 
 def _count_protein_chain_breaks(ca_coordinate, sequences):
@@ -123,12 +123,19 @@ class CryoZeta(nn.Module):
         if triangle_backend not in {"default", "triton", "fpf_k2b"}:
             raise ValueError(f"Unknown triangle attention backend: {triangle_backend}")
         use_fpf_trimul = getattr(configs.infer_setting, "use_fpf_trimul", False)
-        if triangle_backend != "default" or use_fpf_trimul:
+        chunk_budget_mib = getattr(
+            configs.infer_setting, "transition_chunk_budget_mib", 0
+        )
+        if chunk_budget_mib < 0:
+            raise ValueError("transition_chunk_budget_mib must be non-negative")
+        if triangle_backend != "default" or use_fpf_trimul or chunk_budget_mib:
             for module in self.modules():
                 if isinstance(module, TriangleAttention):
                     module.mha.inference_triangle_backend = triangle_backend
                 elif isinstance(module, TriangleMultiplicativeUpdate):
                     module.use_fpf_trimul = use_fpf_trimul
+                elif isinstance(module, Transition) and chunk_budget_mib:
+                    module.inference_chunk_budget_bytes = chunk_budget_mib * 1024**2
 
         self.c_s, self.c_z, self.c_s_inputs, self.c_pz, self.c_p = (
             configs.c_s,

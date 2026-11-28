@@ -69,6 +69,7 @@ model_configs = {
         "use_confidence_head": False,
         "triangle_attention_backend": "default",
         "use_fpf_trimul": False,
+        "transition_chunk_budget_mib": 0,
         "use_triton_confidence_transition": False,
         "lddt_metrics_sparse_enable": GlobalConfigValue("loss_metrics_sparse_enable"),
         "lddt_metrics_chunk_size": ValueMaybeNone(1),
