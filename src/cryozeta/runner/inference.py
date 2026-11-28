@@ -86,22 +86,6 @@ class InferenceRunner:
             self.device = torch.device("cpu")
         if DIST_WRAPPER.world_size > 1:
             dist.init_process_group(backend="nccl")
-        if self.configs.use_deepspeed_evo_attention:
-            env = os.getenv("CUTLASS_PATH", None)
-            self.print(f"env: {env}")
-            assert env is not None, (
-                "if use ds4sci, set env as https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/"
-            )
-            if env is not None:
-                logger.info(
-                    "The kernels will be compiled when DS4Sci_EvoformerAttention is called for the first time."
-                )
-        use_fastlayernorm = os.getenv("LAYERNORM_TYPE", None)
-        if use_fastlayernorm == "fast_layernorm":
-            logger.info(
-                "The kernels will be compiled when fast_layernorm is called for the first time."
-            )
-
         logger.info("Finished init ENV.")
 
     def init_basics(self) -> None:
@@ -112,7 +96,9 @@ class InferenceRunner:
         os.makedirs(self.dump_dir, exist_ok=True)
 
     def init_model(self) -> None:
-        self.model = CryoZeta(self.configs).to(self.device)
+        with torch.device("meta"):
+            self.model = CryoZeta(self.configs)
+        self.model.to_empty(device=self.device)
 
     def load_checkpoint(self) -> None:
         checkpoint_path = self.configs.load_checkpoint_path
@@ -123,7 +109,8 @@ class InferenceRunner:
         assert checkpoint_path.endswith(".safetensors"), (
             "Checkpoint must be a safetensors file"
         )
-        state_dict = load_file(checkpoint_path, device=str(self.device))
+        # Copy CPU-mapped weights directly into the existing model parameters.
+        state_dict = load_file(checkpoint_path, device="cpu")
 
         self.model.load_state_dict(
             state_dict=state_dict,

@@ -16,45 +16,7 @@
 
 PROJECT_ROOT="${PIXI_PROJECT_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
 
-# ── Auto-detect pixi environment based on GPU and driver ──────────────────────
-# Two constraints determine the best CUDA environment:
-#   1. Compute capability (GPU architecture support)
-#   2. Driver-supported CUDA version (hard upper bound from nvidia-smi)
-#
-# Architecture preference:  cc >= 10 → cu13,  cc >= 8 → cu12 (default),  else → cu11
-# Driver constraint:        driver must support the target CUDA major version.
-#
-# If running inside a pixi environment (PIXI_ENVIRONMENT_NAME is set), the
-# user's explicit choice is respected and auto-detection is skipped.
-detect_pixi_env() {
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "default"; return
-    fi
-
-    # Max CUDA version the installed driver supports (major only)
-    driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n 's/.*CUDA Version: *\([0-9]*\).*/\1/p')
-
-    # Highest compute capability among all GPUs
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
-
-    if [ -z "$driver_cuda" ] || [ -z "$compute_cap" ]; then
-        echo "default"; return
-    fi
-
-    major="${compute_cap%%.*}"
-
-    if [ "$major" -ge 10 ] 2>/dev/null && [ "$driver_cuda" -ge 13 ] 2>/dev/null; then
-        echo "cu13"
-    elif [ "$major" -ge 8 ] 2>/dev/null && [ "$driver_cuda" -ge 12 ] 2>/dev/null; then
-        echo "default"
-    elif [ "$driver_cuda" -ge 11 ] 2>/dev/null; then
-        echo "cu11"
-    else
-        echo "default"
-    fi
-}
+. "$PROJECT_ROOT/scripts/detect_pixi_env.sh"
 
 # ── Map CRYOZETA_CUDA shorthand to pixi env name ─────────────────────────────
 cuda_version_to_env() {
@@ -65,7 +27,7 @@ cuda_version_to_env() {
         cu11|cu13|default|dev|dev-cu11|dev-cu13) echo "$1" ;;
         *)
             echo "WARNING: unrecognised CRYOZETA_CUDA='$1', falling back to auto-detect" >&2
-            detect_pixi_env
+            detect_pixi_env "${CUDA_VISIBLE_DEVICES:-0}"
             ;;
     esac
 }
@@ -79,7 +41,8 @@ elif [ -n "$CRYOZETA_CUDA" ]; then
     export PIXI_ENV="$(cuda_version_to_env "$CRYOZETA_CUDA")"
 else
     # 3. Auto-detect from hardware
-    export PIXI_ENV="$(detect_pixi_env)"
+    PIXI_ENV=$(detect_pixi_env "${CUDA_VISIBLE_DEVICES:-0}") || return 1
+    export PIXI_ENV
 fi
 
 # ── TEASER-plusplus ───────────────────────────────────────────────────────────
@@ -99,8 +62,6 @@ if [ -d "${_TEASER_BUILD_PY}/teaserpp_python" ]; then
 fi
 unset _TEASER_BUILD_PY
 
-# CUTLASS headers (provided by the pixi conda package)
-export CUTLASS_PATH="${CONDA_PREFIX}"
 
 # Add Conda lib to LD_LIBRARY_PATH for TVM/CUDA to find libnvrtc
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"

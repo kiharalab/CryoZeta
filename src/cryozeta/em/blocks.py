@@ -13,10 +13,19 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from itertools import islice
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+try:
+    from cryozeta.kernels.triton_cast_silu import cast_silu
+    from cryozeta.kernels.triton_geglu import try_geglu
+except ImportError:
+    cast_silu = None
+    try_geglu = None
 
 
 def get_emb(sin_inp):
@@ -25,6 +34,27 @@ def get_emb(sin_inp):
     """
     emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
     return torch.flatten(emb, -2, -1)
+
+
+class _NormSiLULayers(nn.Sequential):
+    def forward(self, x):
+        if (
+            cast_silu is None
+            or not x.is_cuda
+            or self.training
+            or torch.is_grad_enabled()
+            or torch.compiler.is_compiling()
+            or x.dtype != torch.bfloat16
+            or not 2**20 < x.numel() < 2**31
+            or torch.cuda.get_device_capability(x.device)[0] < 8
+        ):
+            return super().forward(x)
+
+        norm = self[0]
+        x = cast_silu(norm.forward_float(x), x.dtype)
+        for layer in islice(self, 2, None):
+            x = layer(x)
+        return x
 
 
 class ConvBlock3d(nn.Module):
@@ -43,14 +73,14 @@ class ConvBlock3d(nn.Module):
             out_channels = channels
 
         # First normalization and convolution
-        self.in_layers = nn.Sequential(
+        self.in_layers = _NormSiLULayers(
             normalization(channels),
             nn.SiLU(),
             nn.Conv3d(channels, out_channels, 3, padding=1),
         )
 
         # Final convolution layer
-        self.out_layers = nn.Sequential(
+        self.out_layers = _NormSiLULayers(
             normalization(out_channels),
             nn.SiLU(),
             nn.Dropout(0.0),
@@ -133,11 +163,16 @@ class PositionalEncoding3D(nn.Module):
         if len(tensor.shape) != 5:
             raise RuntimeError("The input tensor has to be 5d!")
 
-        if self.cached_penc is not None and self.cached_penc.shape == tensor.shape:
-            return self.cached_penc
+        if (
+            self.cached_penc is not None
+            and self.cached_penc.shape[1:] == tensor.shape[1:]
+            and self.cached_penc.dtype == tensor.dtype
+            and self.cached_penc.device == tensor.device
+        ):
+            return self.cached_penc.expand_as(tensor)
 
         self.cached_penc = None
-        batch_size, x, y, z, orig_ch = tensor.shape
+        _, x, y, z, orig_ch = tensor.shape
         pos_x = torch.arange(x, device=tensor.device, dtype=self.inv_freq.dtype)
         pos_y = torch.arange(y, device=tensor.device, dtype=self.inv_freq.dtype)
         pos_z = torch.arange(z, device=tensor.device, dtype=self.inv_freq.dtype)
@@ -156,8 +191,8 @@ class PositionalEncoding3D(nn.Module):
         emb[:, :, :, self.channels : 2 * self.channels] = emb_y
         emb[:, :, :, 2 * self.channels :] = emb_z
 
-        self.cached_penc = emb[None, :, :, :, :orig_ch].repeat(batch_size, 1, 1, 1, 1)
-        return self.cached_penc
+        self.cached_penc = emb[None, :, :, :, :orig_ch]
+        return self.cached_penc.expand_as(tensor)
 
 
 class FeedForward(nn.Module):
@@ -195,7 +230,17 @@ class GeGLU(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # Get $xW + b$ and $xV + c$
-        x, gate = self.proj(x).chunk(2, dim=-1)
+        packed = self.proj(x)
+        if (
+            try_geglu is not None
+            and packed.is_cuda
+            and not torch.is_grad_enabled()
+            and not torch.compiler.is_compiling()
+        ):
+            fused = try_geglu(packed)
+            if fused is not None:
+                return fused
+        x, gate = packed.chunk(2, dim=-1)
         # $\text{GeGLU}(x) = (xW + b) * \text{GELU}(xV + c)$
         return x * self.gelu(gate)
 
@@ -268,8 +313,11 @@ class GroupNorm32(nn.GroupNorm):
     ### Group normalization with float32 casting
     """
 
+    def forward_float(self, x):
+        return super().forward(x.float())
+
     def forward(self, x):
-        return super().forward(x.float()).type(x.dtype)
+        return self.forward_float(x).to(x.dtype)
 
 
 def normalization(channels):

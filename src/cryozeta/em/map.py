@@ -135,7 +135,7 @@ def parse_mrc(
     with mrcfile.open(mrc_path, permissive=True, mode="r") as mrc:
         if custom_logger:
             print_header(custom_logger, mrc)
-        grid_data = np.array(mrc.data.copy(), dtype=np.float32)
+        grid_data = np.array(mrc.data, dtype=np.float32, copy=True)
         header = mrc.header
         origin = np.array(header.origin.tolist(), dtype=np.float32)
         voxel_size = np.array(mrc.voxel_size.tolist(), dtype=np.float32)
@@ -266,7 +266,10 @@ def resample_mrc(
         logger.info(f"Target voxel size: {target_voxel_size}")
         logger.info(f"Target grid size: {target_grid_size}")
 
-    with torch.no_grad() and torch.amp.autocast("cuda", enabled=use_gpu):
+    device = torch.device("cuda" if use_gpu and torch.cuda.is_available() else "cpu")
+    if use_gpu and device.type == "cpu" and logger:
+        logger.warning("GPU is not available. Using CPU for resampling.")
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=device.type == "cuda"):
         z = (
             torch.arange(0, target_grid_size[0], dtype=torch.float32)
             / original_voxel_size[2]
@@ -289,40 +292,24 @@ def resample_mrc(
             - 1
         )
 
-        new_grid = torch.stack(
-            torch.meshgrid(x, y, z, indexing="ij"),
-            dim=-1,
-        ).unsqueeze(0)
+        original_data = torch.from_numpy(mrc_object.grid_data).to(device)[None, None]
+        x, y, z = x.to(device), y.to(device), z.to(device)
+        depth, height, width = target_grid_size.tolist()
+        target_data = np.empty((width, height, depth), dtype=mrc_object.grid_data.dtype)
+        # Each voxel needs three FP32 coordinates. Bound the temporary grid to
+        # 16 MiB, or one YZ plane when a single plane exceeds that budget.
+        plane_bytes = max(1, height * depth * 3 * x.element_size())
+        planes_per_slab = max(1, (16 * 1024**2) // plane_bytes)
+        for start in range(0, width, planes_per_slab):
+            stop = min(start + planes_per_slab, width)
+            xx, yy, zz = torch.meshgrid(x[start:stop], y, z, indexing="ij")
+            grid = torch.stack((xx, yy, zz), dim=-1).unsqueeze(0)
+            sampled = F.grid_sample(
+                original_data, grid, mode="bilinear", align_corners=True
+            )
+            target_data[start:stop] = sampled[0, 0].cpu().numpy()
 
-        if logger:
-            logger.info(f"New grid shape: {new_grid.shape}")
-
-        original_data = (
-            torch.from_numpy(mrc_object.grid_data).unsqueeze(0).unsqueeze(0)
-        )  # volumetric input
-        if use_gpu:
-            # Check if GPU is available
-            if torch.cuda.is_available():
-                if logger:
-                    logger.info("CUDA is available. Using GPU for resampling.")
-                device = torch.device("cuda")
-                original_data = original_data.to(device)
-            # Check if MPS is available
-            # elif torch.backends.mps.is_available():
-            #     logger.info("MPS is available. Using MPS for resampling.")
-            #     output_device = torch.output_device('mps')
-            #     original_data = original_data.to(output_device)
-            else:
-                if logger:
-                    logger.warning("GPU is not available. Using CPU for resampling.")
-
-        target_data = (
-            F.grid_sample(original_data, new_grid, mode="bilinear", align_corners=True)
-            .cpu()
-            .numpy()[0, 0]
-            .transpose(2, 1, 0)
-        )
-
+        target_data = target_data.transpose(2, 1, 0)
         if logger:
             logger.info(f"Resampled data shape: {target_data.shape}")
 

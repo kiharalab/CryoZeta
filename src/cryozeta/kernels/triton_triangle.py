@@ -1,0 +1,264 @@
+"""Experimental streaming CUDA kernel for square, pair-biased triangle attention."""
+
+import logging
+
+import torch
+import triton
+import triton.language as tl
+from triton.errors import TritonError
+from triton.language.extra.cuda import libdevice
+
+
+@triton.jit
+def _score_tile(
+    q,
+    K,
+    MASK,
+    BIAS,
+    i,
+    kpos,
+    c,
+    N: tl.constexpr,
+    ks2: tl.constexpr,
+    ms3: tl.constexpr,
+    bs2: tl.constexpr,
+    bs3: tl.constexpr,
+):
+    k = tl.load(K + kpos[:, None] * ks2 + c[None, :], kpos[:, None] < N, 0)
+    bias = tl.load(
+        BIAS + i[:, None] * bs2 + kpos[None, :] * bs3,
+        (i[:, None] < N) & (kpos[None, :] < N),
+        0,
+    )
+    mask = tl.load(MASK + kpos * ms3, kpos < N, 0)
+    # Match the rounding boundaries of matmul and the sequential bias adds.
+    score = tl.dot(q, tl.trans(k)).to(q.dtype)
+    score = (score + mask[None, :]).to(q.dtype)
+    score = (score + bias).to(q.dtype).to(tl.float32)
+    return tl.where(kpos[None, :] < N, score, -float("inf"))
+
+
+@triton.jit
+def _triangle(
+    Q,
+    K,
+    V,
+    MASK,
+    BIAS,
+    OUT,
+    N: tl.constexpr,
+    H: tl.constexpr,
+    D: tl.constexpr,
+    qs0: tl.constexpr,
+    qs1: tl.constexpr,
+    qs2: tl.constexpr,
+    ks0: tl.constexpr,
+    ks1: tl.constexpr,
+    ks2: tl.constexpr,
+    vs0: tl.constexpr,
+    vs1: tl.constexpr,
+    vs2: tl.constexpr,
+    ms0: tl.constexpr,
+    ms3: tl.constexpr,
+    bs0: tl.constexpr,
+    bs1: tl.constexpr,
+    bs2: tl.constexpr,
+    bs3: tl.constexpr,
+    BM: tl.constexpr,
+    BN: tl.constexpr,
+    REUSE_RECIPROCAL: tl.constexpr,
+    FAST_SOFTMAX: tl.constexpr,
+):
+    i = tl.program_id(0) * BM + tl.arange(0, BM)
+    row = tl.program_id(1).to(tl.int64)
+    head = tl.program_id(2)
+    c = tl.arange(0, D)
+    j = tl.arange(0, BN)
+    q = tl.load(
+        Q + row * qs0 + head * qs1 + i[:, None] * qs2 + c[None, :], i[:, None] < N, 0
+    )
+    key = K + row * ks0 + head * ks1
+    mask = MASK + row * ms0
+    bias = BIAS + row * bs0 + head * bs1
+    # Compute the softmax statistics without storing the attention matrix.
+    running_max = tl.full((BM,), -float("inf"), tl.float32)
+    normalizer = tl.full((BM,), 0.0, tl.float32)
+    stages: tl.constexpr = 2 if FAST_SOFTMAX else None
+    log2e: tl.constexpr = 1.4426950408889634
+    for tile in tl.range(tl.cdiv(N, BN), num_stages=stages):
+        kpos = tile * BN + j
+        score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
+        maximum = tl.maximum(running_max, tl.max(score, 1))
+        # An entirely masked first tile contributes zero until a finite key arrives.
+        shift = tl.where(maximum == -float("inf"), 0.0, maximum)
+        if FAST_SOFTMAX:
+            alpha = tl.exp2((running_max - shift) * log2e)
+            prob = tl.exp2((score - shift[:, None]) * log2e)
+        else:
+            alpha = libdevice.exp(running_max - shift)
+            prob = libdevice.exp(score - shift[:, None])
+        normalizer = normalizer * alpha + tl.sum(prob, 1)
+        running_max = maximum
+
+    if FAST_SOFTMAX:
+        log2_normalizer = libdevice.log2(normalizer)
+    elif REUSE_RECIPROCAL:
+        inverse = tl.div_rn(1.0, normalizer)
+    # PyTorch rounds normalized probabilities before multiplying by V.
+    acc = tl.full((BM, D), 0.0, tl.float32)
+    for tile in tl.range(tl.cdiv(N, BN), num_stages=stages):
+        kpos = tile * BN + j
+        score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
+        v = tl.load(
+            V + row * vs0 + head * vs1 + kpos[:, None] * vs2 + c[None, :],
+            kpos[:, None] < N,
+            0,
+        )
+        shifted = score - running_max[:, None]
+        if FAST_SOFTMAX:
+            # Subtract the maximum first so a large finite mask cannot swallow log2(Z).
+            prob = tl.exp2(tl.fma(shifted, log2e, -log2_normalizer[:, None]))
+        else:
+            numerator = libdevice.exp(shifted)
+            if REUSE_RECIPROCAL:
+                # Correct the reciprocal product before rounding to the value dtype.
+                prob = numerator * inverse[:, None]
+                residual = tl.fma(-prob, normalizer[:, None], numerator)
+                prob = tl.fma(residual, inverse[:, None], prob)
+            else:
+                prob = tl.div_rn(numerator, normalizer[:, None])
+        acc = tl.dot(prob.to(v.dtype), v, acc)
+    tl.store(
+        OUT + ((row * H + head) * N + i[:, None]) * D + c[None, :],
+        acc,
+        i[:, None] < N,
+    )
+
+
+_failed_devices = set()
+
+
+def try_triangle(q, k, v, biases):
+    """Evaluate projected, scaled queries, or decline unsupported inputs."""
+    if (
+        not q.is_cuda
+        or torch.is_grad_enabled()
+        or torch.compiler.is_compiling()
+        or q.ndim != 4
+        or q.dtype not in (torch.float16, torch.bfloat16)
+        or q.shape != k.shape
+        or q.shape != v.shape
+        or len(biases) != 2
+        or q.device in _failed_devices
+    ):
+        return None
+    rows, heads, length, width = q.shape
+    if not (
+        0 < rows <= 65535
+        and 0 < heads <= 65535
+        and 32 <= length <= 4096
+        and width in (16, 32, 64)
+    ):
+        return None
+    capability = torch.cuda.get_device_capability(q.device)
+    if capability[0] < 8:
+        return None
+    if any(
+        t.dtype != q.dtype or t.device != q.device or t.stride(-1) != 1
+        for t in (q, k, v)
+    ):
+        return None
+    mask, bias = biases
+    if (
+        mask.ndim != 4
+        or mask.shape[0] not in (1, rows)
+        or mask.shape[1:] != (1, 1, length)
+        or bias.ndim != 4
+        or bias.shape[0] not in (1, rows)
+        or bias.shape[1:] != (heads, length, length)
+        or any(
+            t.device != q.device or t.dtype not in (q.dtype, torch.float32)
+            for t in biases
+        )
+    ):
+        return None
+    # Tile and head offsets use 32-bit arithmetic. Large-stride views retain
+    # the reference implementation even if their logical shapes are small.
+    for tensor in (q, k, v, mask, bias):
+        if (
+            sum(
+                (size - 1) * stride
+                for size, stride in zip(tensor.shape, tensor.stride(), strict=True)
+            )
+            >= 2**31
+        ):
+            return None
+    out = torch.empty(q.shape, device=q.device, dtype=q.dtype)
+    block_query, block_key = (16, 128) if (length, width) == (1980, 32) else (32, 32)
+    num_warps = 4
+    # This tile and reciprocal update were qualified on the large A6000 workload.
+    reuse_reciprocal = (
+        capability == (8, 6)
+        and q.dtype == torch.bfloat16
+        and (heads, length, width) == (4, 1980, 32)
+        and rows >= 64
+        and triton.__version__ == "3.9.0"
+        and torch.cuda.get_device_name(q.device) == "NVIDIA RTX A6000"
+    )
+    fast_softmax = (
+        reuse_reciprocal
+        and bias.dtype == q.dtype
+        and (bias.shape[0] == 1 or bias.stride(0) == 0)
+    )
+    if fast_softmax:
+        block_query, block_key = 64, 64
+        bias = bias[:1]
+        padded_length = triton.cdiv(length, 8) * 8
+        if bias.stride(-1) != 1 or bias.stride(-2) != padded_length:
+            packed = bias.new_empty((1, heads, length, padded_length))[..., :length]
+            packed.copy_(bias)
+            bias = packed
+    elif reuse_reciprocal:
+        block_query, block_key, num_warps = 64, 128, 8
+        if bias.shape[0] == 1 and bias.stride(1) == 1 and bias.stride(-1) == heads:
+            bias = bias.contiguous()
+    mask = mask.expand(rows, 1, 1, length)
+    bias = bias.expand(rows, heads, length, length)
+    try:
+        with torch.cuda.device(q.device):
+            _triangle[(triton.cdiv(length, block_query), rows, heads)](
+                q,
+                k,
+                v,
+                mask,
+                bias,
+                out,
+                length,
+                heads,
+                width,
+                *q.stride()[:3],
+                *k.stride()[:3],
+                *v.stride()[:3],
+                mask.stride(0),
+                mask.stride(3),
+                *bias.stride(),
+                block_query,
+                block_key,
+                reuse_reciprocal,
+                fast_softmax,
+                num_warps=num_warps,
+                enable_fp_fusion=True,
+            )
+    except (TritonError, FileNotFoundError, RuntimeError) as exc:
+        if (
+            isinstance(exc, RuntimeError)
+            and not isinstance(exc, TritonError)
+            and "ptxas" not in str(exc).lower()
+        ):
+            raise
+        _failed_devices.add(q.device)
+        logging.getLogger(__name__).warning(
+            "Triangle attention using PyTorch on %s: %s", q.device, exc
+        )
+        return None
+    return out

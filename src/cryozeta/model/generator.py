@@ -12,8 +12,8 @@
 # code remains under Apache-2.0; the combined work is distributed
 # under GPLv3.
 
-import itertools
 from collections.abc import Callable
+from itertools import pairwise
 from typing import Any
 
 import torch
@@ -99,6 +99,8 @@ def sample_diffusion(
     inplace_safe: bool = False,
     attn_chunk_size: int | None = None,
     use_cuequivariance_attention_pair_bias: bool = False,
+    pair_bias_cache_mib: int = 0,
+    cache_atom_conditioning: bool = False,
 ) -> torch.Tensor:
     """Implements Algorithm 18 in AF3.
     It performances denoising steps from time 0 to time T.
@@ -123,6 +125,8 @@ def sample_diffusion(
         diffusion_chunk_size (Optional[int]): Chunk size for diffusion operation. Defaults to None.
         inplace_safe (bool): Whether to use inplace operations safely. Defaults to False.
         attn_chunk_size (Optional[int]): Chunk size for attention operation. Defaults to None.
+        pair_bias_cache_mib (int): Memory budget for reusable token attention biases, in MiB.
+        cache_atom_conditioning (bool): Reuse reference atom features across diffusion steps.
 
     Returns:
         torch.Tensor: the denoised coordinates of x in inference stage
@@ -142,42 +146,57 @@ def sample_diffusion(
         inplace_safe=inplace_safe,
     )
 
-    def _chunk_sample_diffusion(chunk_n_sample, inplace_safe):
-        # init noise
-        # [..., N_sample, N_atom, 3]
+    denoise_options = {}
+    if noise_schedule.numel() > 2 and (N_sample == 1 or diffusion_chunk_size == 1):
+        if pair_bias_cache_mib > 0:
+            biases = denoise_net.diffusion_transformer.prepare_pair_bias_cache(
+                cached_pair_z,
+                pair_bias_cache_mib * 2**20,
+                use_cuequivariance_attention_pair_bias,
+            )
+            if biases:
+                denoise_options["cached_pair_biases"] = biases
+        if cache_atom_conditioning and cached_pair_z.is_cuda:
+            encoder = denoise_net.atom_attention_encoder
+            if not encoder.training and not torch.is_grad_enabled():
+                denoise_options["cached_atom_conditioning"] = (
+                    encoder.prepare_conditioning(
+                        input_feature_dict,
+                        s_trunk.unsqueeze(-3),
+                        cached_pair_z.unsqueeze(-4),
+                        inplace_safe,
+                    )
+                )
+
+    noise_steps = tuple(pairwise(noise_schedule))
+
+    def _chunk_sample_diffusion(chunk_n_sample):
         x_l = noise_schedule[0] * torch.randn(
             size=(*batch_shape, chunk_n_sample, N_atom, 3), device=device, dtype=dtype
-        )  # NOTE: set seed in distributed training
+        )
 
-        noise_pairs = list(itertools.pairwise(noise_schedule))
-        for _, (c_tau_last, c_tau) in tqdm(
-            enumerate(noise_pairs),
-            total=len(noise_pairs),
+        for c_tau_last, c_tau in tqdm(
+            noise_steps,
             desc="Diffusion denoising",
             leave=False,
             dynamic_ncols=True,
         ):
-            # [..., N_sample, N_atom, 3]
             x_l = (
                 centre_random_augmentation(
                     x_input_coords=x_l, N_sample=1, no_center=False
-                )  # set to true for absolute coordinates)
+                )
                 .squeeze(dim=-3)
                 .to(dtype)
             )
 
-            # Denoise with a predictor-corrector sampler
-            # 1. Add noise to move x_{c_tau_last} to x_{t_hat}
             gamma = float(gamma0) if c_tau > gamma_min else 0
             t_hat = c_tau_last * (gamma + 1)
-
             delta_noise_level = torch.sqrt(t_hat**2 - c_tau_last**2)
             x_noisy = x_l + noise_scale_lambda * delta_noise_level * torch.randn(
                 size=x_l.shape, device=device, dtype=dtype
             )
 
-            # 2. Denoise from x_{t_hat} to x_{c_tau}
-            # Euler step only
+            # Expand the denoising time to the sample batch.
             t_hat = (
                 t_hat.reshape((1,) * (len(batch_shape) + 1))
                 .expand(*batch_shape, chunk_n_sample)
@@ -195,6 +214,7 @@ def sample_diffusion(
                 inplace_safe=inplace_safe,
                 use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
                 cached_pair_z=cached_pair_z,
+                **denoise_options,
             )
 
             delta = (x_noisy - x_denoised) / t_hat[
@@ -203,35 +223,21 @@ def sample_diffusion(
             dt = c_tau - t_hat
             x_l = x_noisy + step_scale_eta * dt[..., None, None] * delta
 
-        # #abs training
-        # #add the centroid back
-        # em_centroid = input_feature_dict["support_point_center"]
-        # x_l = x_l + em_centroid
-
         return x_l
 
     if diffusion_chunk_size is None:
-        x_l = _chunk_sample_diffusion(N_sample, inplace_safe=inplace_safe)
-    else:
-        x_l = []
-        no_chunks = N_sample // diffusion_chunk_size + (
-            N_sample % diffusion_chunk_size != 0
-        )
-        for i in tqdm(
-            range(no_chunks),
-            total=no_chunks,
-            desc="Diffusion sample chunks",
-            leave=False,
-            dynamic_ncols=True,
-        ):
-            chunk_n_sample = (
-                diffusion_chunk_size
-                if i < no_chunks - 1
-                else N_sample - i * diffusion_chunk_size
-            )
-            chunk_x_l = _chunk_sample_diffusion(
-                chunk_n_sample, inplace_safe=inplace_safe
-            )
-            x_l.append(chunk_x_l)
-        x_l = torch.cat(x_l, -3)  # [..., N_sample, N_atom, 3]
-    return x_l
+        return _chunk_sample_diffusion(N_sample)
+
+    chunks = []
+    no_chunks = N_sample // diffusion_chunk_size + (
+        N_sample % diffusion_chunk_size != 0
+    )
+    for i in tqdm(
+        range(no_chunks),
+        desc="Diffusion sample chunks",
+        leave=False,
+        dynamic_ncols=True,
+    ):
+        chunk_n_sample = min(diffusion_chunk_size, N_sample - i * diffusion_chunk_size)
+        chunks.append(_chunk_sample_diffusion(chunk_n_sample))
+    return torch.cat(chunks, dim=-3)

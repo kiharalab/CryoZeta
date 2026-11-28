@@ -110,6 +110,7 @@ class Transition(nn.Module):
         super().__init__()
         self.n = n
         self.c_in = c_in
+        self.inference_hidden_budget_bytes: int | None = None
         self.layernorm1 = LayerNorm(c_in)
         self.linear_no_bias_a = LinearNoBias(in_features=c_in, out_features=n * c_in)
         self.linear_no_bias_b = LinearNoBias(in_features=c_in, out_features=n * c_in)
@@ -139,12 +140,63 @@ class Transition(nn.Module):
             other_dims = x.shape[:-1]
             dim_size = x.shape[-1]
             size = x.shape[-2]
-            x = x.reshape(-1, dim_size)
-            chunk_num = 1 if size < 3200 else 8
-            chunks = torch.chunk(x, chunk_num, dim=-2)
-            outputs = torch.empty(
-                (x.shape[0], self.c_in), dtype=x.dtype, device=x.device
+            use_bf16_chunks = (
+                x.shape == (1980, 1980, 128)
+                and self.n == 4
+                and x.is_cuda
+                and x.dtype == torch.bfloat16
+                and x.is_contiguous()
+                and x.storage_offset() == 0
+                and not torch.is_grad_enabled()
+                and not torch.compiler.is_compiling()
+                and torch.is_autocast_enabled("cuda")
+                and torch.get_autocast_dtype("cuda") == torch.bfloat16
+                and torch.__version__ == "2.15.0+cu132"
+                and torch.backends.cuda.preferred_blas_library().name == "Cublas"
+                and torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction is True
+                and torch.cuda.get_device_name(x.device) == "NVIDIA RTX A6000"
             )
+            x = x.reshape(-1, dim_size)
+            budget = self.inference_hidden_budget_bytes
+            can_fuse = (
+                budget is not None
+                and x.is_cuda
+                and not torch.is_grad_enabled()
+                and not torch.is_autocast_enabled("cuda")
+                and not torch.compiler.is_compiling()
+                and x.dtype == torch.float32
+                and (self.c_in, self.n) == (128, 4)
+                and torch.cuda.get_device_capability(x.device) == (8, 6)
+            )
+            if can_fuse:
+                from cryozeta.kernels.triton_transition import try_fused_transition
+
+                fused = try_fused_transition(
+                    x,
+                    self.layernorm1.weight,
+                    self.layernorm1.bias,
+                    self.linear_no_bias_a.weight,
+                    self.linear_no_bias_b.weight,
+                    self.linear_no_bias.weight,
+                    self.layernorm1.eps,
+                )
+                if fused is not None:
+                    return fused.reshape(*other_dims, self.c_in)
+            chunk_count = 1 if size < 3200 else 8
+            if use_bf16_chunks:
+                # Four row chunks preserve the measured cuBLAS arithmetic and
+                # bound the two live hidden projections for this pair shape.
+                chunk_count = 4
+            chunks = x.chunk(chunk_count, dim=0)
+            if can_fuse and budget is not None:
+                # Each row needs two hidden projections before the gated product.
+                bytes_per_row = 2 * self.n * self.c_in * x.element_size()
+                max_rows = max(1, budget // bytes_per_row)
+                if chunks[0].size(0) > max_rows:
+                    chunks = x.split(max_rows, dim=0)
+            outputs = None
+            if len(chunks) > 1:
+                outputs = x.new_empty((x.shape[0], self.c_in))
             start = 0
             for chunk in chunks:
                 y = self.layernorm1(chunk)
@@ -155,6 +207,9 @@ class Transition(nn.Module):
                 b *= a
                 del a
                 b = self.linear_no_bias(b)
+                if outputs is None:
+                    # The preallocated output would cast the projection to x.dtype.
+                    return b.to(dtype=x.dtype).reshape(*other_dims, self.c_in)
                 outputs[start : start + b.shape[0]] = b
                 start += b.shape[0]
                 del b
@@ -298,22 +353,17 @@ def rearrange_qk_to_dense_trunk(
     ]
 
     if compute_mask:
-        pad_mask = q[0].new_ones(
-            *(1,) * len(q[0].shape[:-2]),
-            n + q_pad_length,
-            n + pad_left + pad_right,
-            requires_grad=False,
+        # A pair is valid when both indices are inside the unpadded sequence.
+        # Construct only the local windows that attention will consume.
+        starts = torch.arange(n_trunks, device=q[0].device)[:, None] * n_queries
+        query_indices = starts + torch.arange(n_queries, device=q[0].device)
+        key_indices = starts + torch.arange(n_keys, device=q[0].device) - pad_left
+        query_valid = query_indices < n
+        key_valid = (key_indices >= 0) & (key_indices < n)
+        pad_mask_trunked = query_valid[..., None] & key_valid[:, None, :]
+        pad_mask_trunked = pad_mask_trunked.view(
+            *(1,) * len(q[0].shape[:-2]), n_trunks, n_queries, n_keys
         )
-        pad_mask[..., :n, 0:pad_left] = 0
-        pad_mask[..., :n, pad_left + n : :] = 0
-        pad_mask[..., n::, :] = 0
-
-        concat_split_data = optimized_concat_split(pad_mask, n_queries)
-        pad_mask_trunked = (
-            concat_split_data.unfold(
-                -1, n_keys, pad_mask.size(-1) + n_queries
-            ).transpose(-2, -3)
-        ).bool()
     else:
         pad_mask_trunked = None
 
@@ -392,39 +442,29 @@ def rearrange_to_dense_trunk(
     assert n_queries & 0x01 == 0
     assert n_keys & 0x01 == 0
 
-    n, _d = q.shape[-2:]
-
-    q_trunked, kv_trunked, padding_info = rearrange_qk_to_dense_trunk(
+    q_trunked, (k_trunked, v_trunked), padding_info = rearrange_qk_to_dense_trunk(
         q=q,
         k=[k, v],
         dim_q=-2,
         dim_k=[-2, -2],
         n_queries=n_queries,
         n_keys=n_keys,
-        compute_mask=False,
+        compute_mask=attn_bias is None,
     )
-    q_pad_length, pad_left, pad_right = (
-        padding_info["q_pad"],
-        padding_info["k_pad_left"],
-        padding_info["k_pad_right"],
-    )
+    q_pad_length = padding_info["q_pad"]
 
-    # Padded_width = n + pad_left + pad_right
     if attn_bias is None:
-        attn_bias = q.new_zeros(
-            *(1,) * len(q.shape[:-2]), n + q_pad_length, n + pad_left + pad_right
-        )
-        attn_bias[..., :n, 0:pad_left] = -inf
-        attn_bias[..., :n, pad_left + n : :] = -inf
-        attn_bias[..., n::, :] = -inf
+        valid = padding_info["mask_trunked"]
+        attn_bias_trunked = q.new_zeros(valid.shape).masked_fill_(~valid, -inf)
     else:
+        pad_left = padding_info["k_pad_left"]
+        pad_right = padding_info["k_pad_right"]
         attn_bias = F.pad(attn_bias, (pad_left, pad_right, 0, q_pad_length), value=-inf)
-
-    concat_split_data = optimized_concat_split(attn_bias, n_queries)
-    attn_bias_trunked = concat_split_data.unfold(
-        -1, n_keys, attn_bias.shape[-1] + n_queries
-    ).transpose(-2, -3)
-    return q_trunked, kv_trunked[0], kv_trunked[1], attn_bias_trunked, q_pad_length
+        concat_split_data = optimized_concat_split(attn_bias, n_queries)
+        attn_bias_trunked = concat_split_data.unfold(
+            -1, n_keys, attn_bias.shape[-1] + n_queries
+        ).transpose(-2, -3)
+    return q_trunked, k_trunked, v_trunked, attn_bias_trunked, q_pad_length
 
 
 def _local_attention(

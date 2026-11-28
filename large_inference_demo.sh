@@ -62,40 +62,6 @@ Examples:
 USAGE
 }
 
-# ── Auto-detect pixi environment based on GPU and driver ──────────────────────
-detect_pixi_env() {
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "default"; return
-    fi
-
-    # Max CUDA version the installed driver supports (major only).
-    # nvidia-smi headers: old drivers report "CUDA Version:", new drivers
-    # (>= 610) report "CUDA UMD Version:".
-    local driver_cuda
-    driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n -E 's/.*CUDA (UMD )?Version: *([0-9]+).*/\2/p' | head -1)
-
-    # Highest compute capability among all GPUs
-    local compute_cap
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
-
-    if [ -z "$driver_cuda" ] || [ -z "$compute_cap" ]; then
-        echo "default"; return
-    fi
-
-    local major="${compute_cap%%.*}"
-
-    if [ "$major" -ge 10 ] 2>/dev/null && [ "$driver_cuda" -ge 13 ] 2>/dev/null; then
-        echo "cu13"
-    elif [ "$major" -ge 8 ] 2>/dev/null && [ "$driver_cuda" -ge 12 ] 2>/dev/null; then
-        echo "default"
-    elif [ "$driver_cuda" -ge 11 ] 2>/dev/null; then
-        echo "cu11"
-    else
-        echo "default"
-    fi
-}
 
 # ── Map CUDA version shorthand to pixi env name ──────────────────────────────
 cuda_version_to_env() {
@@ -161,6 +127,8 @@ done
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${PIXI_PROJECT_ROOT:-${SCRIPT_DIR}}"
+. "$SCRIPT_DIR/scripts/detect_pixi_env.sh"
+gpu_ids="${cli_gpu:-1}"
 ASSETS_DIR="${CRYOZETA_ASSETS_DIR:-${PROJECT_ROOT}/assets}"
 
 # ── Resolve pixi environment ─────────────────────────────────────────────────
@@ -172,12 +140,10 @@ elif [ -n "${PIXI_ENV:-}" ]; then
 elif [ -n "${CRYOZETA_CUDA:-}" ]; then
     PIXI_ENV="$(cuda_version_to_env "$CRYOZETA_CUDA")"
 else
-    PIXI_ENV="$(detect_pixi_env)"
+    PIXI_ENV="$(detect_pixi_env "$gpu_ids")"
 fi
 
-export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
 CONDA_PREFIX="${PROJECT_ROOT}/.pixi/envs/${PIXI_ENV}"
@@ -188,9 +154,7 @@ fi
 
 PIXI_RUN=(pixi run --manifest-path "${PROJECT_ROOT}" --no-install --frozen -e "${PIXI_ENV}")
 
-# Point CUDA_HOME to the pixi environment so that PyTorch's cpp_extension
-# finds the pixi-managed nvcc (and matching host-compiler compatibility)
-# instead of a system-installed CUDA toolkit.
+# Use the CUDA toolkit from the selected Pixi environment.
 PIXI_PREFIX="$("${PIXI_RUN[@]}" bash -c 'echo $CONDA_PREFIX')"
 export CUDA_HOME="${PIXI_PREFIX}"
 
@@ -199,12 +163,10 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention=true
 use_cuequivariance=true  # Master toggle for all cuEquivariance modules
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
-use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
 detection_checkpoint_path="${cli_detection_checkpoint:-${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors}"
 
@@ -221,11 +183,6 @@ dump_dir="${cli_output_dir:-${PROJECT_ROOT}/output/large_examples}"
 selected_entry="${cli_example}"
 selected_input_json="${dump_dir}/selected_input_entry.json"
 cycle_input_json="${dump_dir}/selected_cycle_input_entry.json"
-
-# ── GPU configuration ────────────────────────────────────────────────────────
-# CLI flag overrides the default; use -g/--gpu to set from command line.
-gpu_ids="${cli_gpu:-1}"
-# ─────────────────────────────────────────────────────────────────────────────
 
 echo "==> Using pixi environment: ${PIXI_ENV}"
 echo "==> Project root: ${PROJECT_ROOT}"
@@ -353,11 +310,9 @@ CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-cycle-predict \
     --sample.N_step "${N_step}" \
     --model.N_cycle "${N_cycle}" \
     --max_residues_per_stage "${max_residues_per_stage}" \
-    --use_deepspeed_evo_attention "${use_deepspeed_evo_attention}" \
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
-    --use_opm_tilelang "${use_opm_tilelang}" \
     --num_dl_workers 1 \
     ${registration_flag}
 

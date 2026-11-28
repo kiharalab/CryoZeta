@@ -8,38 +8,12 @@ set -e
 EXAMPLE_NAME=${1:-all}
 GPU_ID=${2:-0}
 
-export LAYERNORM_TYPE=fast_layernorm
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
-# ── Auto-detect pixi environment based on GPU ─────────────────────────────────
-detect_pixi_env() {
-    local compute_cap driver_cuda
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
-        echo "default"; return
-    fi
-    driver_cuda=$(nvidia-smi 2>/dev/null \
-        | sed -n 's/.*CUDA Version: *\([0-9]*\).*/\1/p')
-    compute_cap=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader \
-        | sort -t. -k1,1nr -k2,2nr | head -1 | tr -d '[:space:]')
-    if [ -z "$driver_cuda" ] || [ -z "$compute_cap" ]; then
-        echo "default"; return
-    fi
-    local major="${compute_cap%%.*}"
-    if [ "$major" -ge 10 ] 2>/dev/null && [ "$driver_cuda" -ge 13 ] 2>/dev/null; then
-        echo "cu13"
-    elif [ "$major" -ge 8 ] 2>/dev/null && [ "$driver_cuda" -ge 12 ] 2>/dev/null; then
-        echo "default"
-    elif [ "$driver_cuda" -ge 11 ] 2>/dev/null; then
-        echo "cu11"
-    else
-        echo "default"
-    fi
-}
+. "$(dirname -- "${BASH_SOURCE[0]}")/scripts/detect_pixi_env.sh"
 
-PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env)}"
+PIXI_ENV="${PIXI_ENV:-$(detect_pixi_env "$GPU_ID")}"
 echo "==> Using pixi environment: ${PIXI_ENV}"
-export CUTLASS_PATH="$(pwd)/.pixi/envs/${PIXI_ENV}"
 
 if [ -d "$(pwd)/.pixi/envs/${PIXI_ENV}/lib" ]; then
     export LD_LIBRARY_PATH="$(pwd)/.pixi/envs/${PIXI_ENV}/lib:${LD_LIBRARY_PATH:-}"
@@ -52,11 +26,9 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_deepspeed_evo_attention=true
 use_cuequivariance_attention=true
 use_cuequivariance_multiplicative_update=true
 use_cuequivariance_attention_pair_bias=false
-use_opm_tilelang=false
 overwrite=false
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
@@ -88,11 +60,9 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \
@@ -108,11 +78,9 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_deepspeed_evo_attention ${use_deepspeed_evo_attention} \
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \

@@ -121,8 +121,8 @@ class PairformerBlock(nn.Module):
                 [..., N_token, N_token, c_z]
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
-            use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_memory_efficient_kernel (bool): Legacy argument retained for compatibility.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.
@@ -135,97 +135,61 @@ class PairformerBlock(nn.Module):
                 [..., N_token, c_s] | None
                 [..., N_token, N_token, c_z]
         """
-        if inplace_safe:
-            z = self.tri_mul_out(
-                z, mask=pair_mask, inplace_safe=inplace_safe, _add_with_inplace=True,
-                use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
-            )
-            z = self.tri_mul_in(
-                z, mask=pair_mask, inplace_safe=inplace_safe, _add_with_inplace=True,
-                use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
-            )
-            z += self.tri_att_start(
+        for triangle_multiplication in (self.tri_mul_out, self.tri_mul_in):
+            update = triangle_multiplication(
                 z,
                 mask=pair_mask,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cuequivariance_attention=use_cuequivariance_attention,
-                use_lma=use_lma,
                 inplace_safe=inplace_safe,
-                chunk_size=chunk_size,
-            )
-            z = z.transpose(-2, -3).contiguous()
-            z += self.tri_att_end(
-                z,
-                mask=pair_mask.transpose(-1, -2) if pair_mask is not None else None,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cuequivariance_attention=use_cuequivariance_attention,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                chunk_size=chunk_size,
-            )
-            z = z.transpose(-2, -3).contiguous()
-            z += self.pair_transition(z)
-            if self.c_s > 0:
-                s += self.attention_pair_bias(
-                    a=s,
-                    s=None,
-                    z=z,
-                    use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
-                )
-                s += self.single_transition(s)
-            return s, z
-        else:
-            tmu_update = self.tri_mul_out(
-                z, mask=pair_mask, inplace_safe=inplace_safe, _add_with_inplace=False,
+                _add_with_inplace=inplace_safe,
                 use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             )
-            z = z + self.dropout_row(tmu_update)
-            del tmu_update
-            tmu_update = self.tri_mul_in(
-                z, mask=pair_mask, inplace_safe=inplace_safe, _add_with_inplace=False,
-                use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
-            )
-            z = z + self.dropout_row(tmu_update)
-            del tmu_update
-            z = z + self.dropout_row(
-                self.tri_att_start(
-                    z,
-                    mask=pair_mask,
-                    use_memory_efficient_kernel=use_memory_efficient_kernel,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_cuequivariance_attention=use_cuequivariance_attention,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                    chunk_size=chunk_size,
-                )
-            )
-            z = z.transpose(-2, -3)
-            z = z + self.dropout_row(
-                self.tri_att_end(
-                    z,
-                    mask=pair_mask.transpose(-1, -2) if pair_mask is not None else None,
-                    use_memory_efficient_kernel=use_memory_efficient_kernel,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_cuequivariance_attention=use_cuequivariance_attention,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                    chunk_size=chunk_size,
-                )
-            )
-            z = z.transpose(-2, -3)
+            z = update if inplace_safe else z + self.dropout_row(update)
+            del update
 
+        end_mask = pair_mask.transpose(-1, -2) if pair_mask is not None else None
+        for triangle_attention, mask in (
+            (self.tri_att_start, pair_mask),
+            (self.tri_att_end, end_mask),
+        ):
+            update = triangle_attention(
+                z,
+                mask=mask,
+                use_cuequivariance_attention=use_cuequivariance_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                chunk_size=chunk_size,
+            )
+            if inplace_safe:
+                z += update
+            else:
+                z = z + self.dropout_row(update)
+            del update
+            z = z.transpose(-2, -3)
+            if inplace_safe:
+                z = z.contiguous()
+
+        if inplace_safe:
+            z += self.pair_transition(z)
+        else:
             z = z + self.pair_transition(z)
-            if self.c_s > 0:
-                s = s + self.attention_pair_bias(
-                    a=s,
-                    s=None,
-                    z=z,
-                    use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
-                )
+
+        if self.c_s > 0:
+            update = self.attention_pair_bias(
+                a=s,
+                s=None,
+                z=z,
+                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
+            )
+            if inplace_safe:
+                s += update
+            else:
+                s = s + update
+            del update
+            if inplace_safe:
+                s += self.single_transition(s)
+            else:
                 s = s + self.single_transition(s)
-            return s, z
+        return s, z
 
 
 class PairformerStack(nn.Module):
@@ -282,7 +246,6 @@ class PairformerStack(nn.Module):
                 b,
                 pair_mask=pair_mask,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
                 use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -324,7 +287,7 @@ class PairformerStack(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.
@@ -344,7 +307,6 @@ class PairformerStack(nn.Module):
         blocks = self._prep_blocks(
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -489,7 +451,6 @@ class MSABlock(nn.Module):
         is_last_block: bool = False,
         msa_dropout: float = 0.15,
         pair_dropout: float = 0.25,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """
         Args:
@@ -499,7 +460,6 @@ class MSABlock(nn.Module):
             is_last_block (int): if this is the last block of MSAModule. Defaults to False.
             msa_dropout (float, optional): dropout ratio for msa block. Defaults to 0.15.
             pair_dropout (float, optional): dropout ratio for pair stack. Defaults to 0.25.
-            use_opm_tilelang (bool): Use TileLang kernel for OPM. Defaults to False.
         """
         super().__init__()
         self.c_m = c_m
@@ -511,7 +471,6 @@ class MSABlock(nn.Module):
             c_m=self.c_m,
             c_z=self.c_z,
             c_hidden=self.c_hidden,
-            use_tilelang=use_opm_tilelang,
         )
         if not self.is_last_block:
             # MSA stack
@@ -541,7 +500,7 @@ class MSABlock(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool): Whether to use low-memory attention. Defaults to False.
@@ -554,9 +513,7 @@ class MSABlock(nn.Module):
                 [...,n_token, n_token, c_z]
         """
         # Communication
-        z = z + self.outer_product_mean_msa(
-            m, inplace_safe=inplace_safe, chunk_size=chunk_size
-        )
+        z = z + self.outer_product_mean_msa(m)
         if not self.is_last_block:
             # MSA stack
             m = self.msa_stack(m, z)
@@ -566,7 +523,6 @@ class MSABlock(nn.Module):
             z=z,
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_lma=use_lma,
@@ -595,7 +551,6 @@ class MSAModule(nn.Module):
         pair_dropout: float = 0.25,
         blocks_per_ckpt: int | None = 1,
         msa_configs: dict | None = None,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """Main Entry of MSAModule
 
@@ -656,7 +611,6 @@ class MSAModule(nn.Module):
                 is_last_block=(i + 1 == n_blocks),
                 msa_dropout=msa_dropout,
                 pair_dropout=pair_dropout,
-                use_opm_tilelang=use_opm_tilelang,
             )
             self.blocks.append(block)
 
@@ -677,7 +631,6 @@ class MSAModule(nn.Module):
                 b,
                 pair_mask=pair_mask,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
                 use_lma=use_lma,
@@ -720,7 +673,7 @@ class MSAModule(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool): Whether to use low-memory attention. Defaults to False.
@@ -767,6 +720,7 @@ class MSAModule(nn.Module):
             ],
             dim=-1,
         )  # [..., N_msa_sample, N_token, 32 + 1 + 1]
+        del msa_feat
         # Line2
         msa_sample = self.linear_no_bias_m(msa_sample)
 
@@ -779,7 +733,6 @@ class MSAModule(nn.Module):
         blocks = self._prep_blocks(
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_lma=use_lma,
@@ -908,7 +861,6 @@ class EMPairformerBlock(nn.Module):
         pair_dropout: float,
         inf: float,
         eps: float,
-        use_opm_tilelang: bool = False,
     ):
         super().__init__()
 
@@ -964,13 +916,11 @@ class EMPairformerBlock(nn.Module):
             c_pz,
             c_z,
             c_hidden_mul,
-            use_tilelang=use_opm_tilelang,
         )
         self.outter_column_product_mean = OuterProductMean(
             c_pz,
             c_p,
             c_hidden_mul,
-            use_tilelang=use_opm_tilelang,
         )
 
         self.tri_mul_out = TriangleMultiplicationOutgoing(
@@ -1033,7 +983,6 @@ class EMPairformerBlock(nn.Module):
             z,
             pair_mask,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_lma=use_lma,
@@ -1072,7 +1021,6 @@ class EMPairformerBlock(nn.Module):
                 z,
                 chunk_size=_attn_chunk_size,
                 use_memory_efficient_kernel=False,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
             ),
             inplace=inplace_safe,
@@ -1084,7 +1032,6 @@ class EMPairformerBlock(nn.Module):
                 pz,
                 p,
                 chunk_size=_attn_chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
             ),
             inplace=inplace_safe,
@@ -1100,9 +1047,7 @@ class EMPairformerBlock(nn.Module):
         )
         z = add(
             z,
-            self.outer_row_product_mean(
-                pz, mask=None, chunk_size=chunk_size, inplace_safe=inplace_safe
-            ),
+            self.outer_row_product_mean(pz),
             inplace=inplace_safe,
         )
 
@@ -1112,9 +1057,7 @@ class EMPairformerBlock(nn.Module):
         pz = pz.transpose(-2, -3)
         p = add(
             p,
-            self.outter_column_product_mean(
-                pz, mask=None, chunk_size=chunk_size, inplace_safe=inplace_safe
-            ),
+            self.outter_column_product_mean(pz),
             inplace=inplace_safe,
         )
         pz = pz.transpose(-2, -3)
@@ -1156,7 +1099,6 @@ class EMPairformerBlock(nn.Module):
                     mask=pair_mask,
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
@@ -1175,7 +1117,6 @@ class EMPairformerBlock(nn.Module):
                     mask=pair_mask.transpose(-1, -2),
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
@@ -1235,7 +1176,6 @@ class EMPairformerStack(nn.Module):
         inf: float,
         eps: float,
         blocks_per_ckpt: int | None = None,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """
         Args:
@@ -1272,7 +1212,6 @@ class EMPairformerStack(nn.Module):
                 pair_dropout=pair_dropout,
                 inf=inf,
                 eps=eps,
-                use_opm_tilelang=use_opm_tilelang,
             )
             self.blocks.append(block)
 
@@ -1296,7 +1235,6 @@ class EMPairformerStack(nn.Module):
                 b,
                 pair_mask=pair_mask,
                 # use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cuequivariance_attention=use_cuequivariance_attention,
                 use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
                 use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -1346,7 +1284,7 @@ class EMPairformerStack(nn.Module):
             pair_mask (torch.Tensor): pair mask
                 [..., N_token, N_token]
             use_memory_efficient_kernel (bool): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_deepspeed_evo_attention (bool): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool): Whether to use cuEquivariance triangle attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_cuequivariance_attention_pair_bias (bool): Whether to use cuEquivariance attention pair bias. Defaults to False.
@@ -1367,7 +1305,6 @@ class EMPairformerStack(nn.Module):
         blocks = self._prep_blocks(
             pair_mask=pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,

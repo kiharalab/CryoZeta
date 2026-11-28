@@ -14,21 +14,10 @@
 # limitations under the License.
 import importlib
 import math
-import os
+import sys
 from collections.abc import Callable
 
 import numpy as np
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-ds4s_is_installed = (
-    deepspeed_is_installed
-    and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
-)
-if deepspeed_is_installed:
-    import deepspeed
-
-if ds4s_is_installed:
-    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
@@ -44,11 +33,6 @@ fa_is_installed = importlib.util.find_spec("flash_attn") is not None
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
-
-fastln_is_installed = os.getenv("LAYERNORM_TYPE", None) == "fast_layernorm"
-if fastln_is_installed:
-    # LayerNorm is a time bottomneck, so we use a custom implementation.
-    from cryozeta.model.layer_norm.layer_norm import FusedLayerNorm
 
 import torch
 import torch.nn as nn
@@ -87,6 +71,8 @@ def _calculate_fan(linear_weight_shape, fan="fan_in"):
 
 
 def trunc_normal_init_(weights, scale=1.0, fan="fan_in"):
+    if weights.is_meta:
+        return  # SciPy would still generate real samples for a metadata-only tensor.
     shape = weights.shape
     f = _calculate_fan(shape, fan)
     scale = scale / max(1, f)
@@ -204,8 +190,9 @@ class Linear(nn.Linear):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
+        deepspeed = sys.modules.get("deepspeed")
         deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+            deepspeed is not None and deepspeed.comm.comm.is_initialized()
         )
         if self.precision is not None:
             with torch.amp.autocast(device_type="cuda", enabled=False):
@@ -240,10 +227,14 @@ class OpenFoldLayerNorm(nn.Module):
 
     def forward(self, x):
         d = x.dtype
+        deepspeed = sys.modules.get("deepspeed")
         deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+            deepspeed is not None and deepspeed.comm.comm.is_initialized()
         )
-        if d is torch.bfloat16 and not deepspeed_is_initialized:
+        preserve_dtype = d is torch.bfloat16 or (
+            d is torch.float16 and x.is_cuda and not torch.is_grad_enabled()
+        )
+        if preserve_dtype and not deepspeed_is_initialized:
             with torch.amp.autocast(device_type="cuda", enabled=False):
                 out = nn.functional.layer_norm(
                     x,
@@ -266,12 +257,6 @@ class OpenFoldLayerNorm(nn.Module):
 
 # Keep the function name for code simplicity
 def LayerNorm(c_in, eps: float = 1e-5):
-    # if specify "fast_layernorm" and fastln_is_installed, use the FusedLayerNorm,
-    # Otherwise, OpenFoldLayerNorm is used!
-    if fastln_is_installed:
-        # print("use fast layernorm")
-        return FusedLayerNorm(c_in, eps)
-    # print("use openfold layernorm")
     return OpenFoldLayerNorm(c_in, eps)
 
 
@@ -282,8 +267,9 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     type bfloat16
     """
     d = t.dtype
+    deepspeed = sys.modules.get("deepspeed")
     deepspeed_is_initialized = (
-        deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        deepspeed is not None and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
         with torch.amp.autocast(device_type="cuda", enabled=False):
@@ -298,7 +284,8 @@ def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> b
     """Check if cuEquivariance triangle_attention would fall back for given params."""
     if not cueq_is_installed:
         return True
-    if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+    threshold = max(CUEQ_TRIATTN_FALLBACK_THRESHOLD, 200 if hidden_dim < 32 else 0)
+    if n_token <= threshold:
         return True
     if dtype == torch.float32:
         if hidden_dim > 32 or hidden_dim % 4 != 0:
@@ -368,6 +355,76 @@ def _attention(
     a = torch.matmul(a, value)
 
     return a
+
+
+def triangle_mask_bias(mask, x, inf):
+    dtype = x.dtype
+    if torch.is_autocast_enabled(x.device.type):
+        dtype = torch.get_autocast_dtype(x.device.type)
+    return min(inf, torch.finfo(dtype).max) * (mask.to(dtype) - 1)
+
+
+def _bounded_attention(q, k, v, biases, *, use_sdpa=False):
+    # Allow space for FP32 logits, probabilities and softmax workspace.
+    budget = 128 * 1024**2
+    bytes_per_query = math.prod(q.shape[:-2]) * k.shape[-2] * 12
+    # The budget bounds materialized logits. Efficient SDPA streams them and
+    # can process a complete row batch without the quadratic score buffer.
+    if (
+        use_sdpa
+        and q.is_cuda
+        and q.ndim == 4
+        and 0 < q.shape[0] <= 256
+        and q.dtype in (torch.float16, torch.bfloat16)
+        and len(biases) == 1
+        and biases[0].shape == (1, q.shape[1], q.shape[-2], k.shape[-2])
+        and biases[0].stride(-1) == 1
+        and biases[0].stride(-2) % 8 == 0
+        and 512 <= q.shape[-2] <= 4096
+        and k.shape[-2] == q.shape[-2]
+        and bytes_per_query * q.shape[-2] > budget
+        and not torch.is_grad_enabled()
+        and not torch.compiler.is_compiling()
+    ):
+        choose_backend = getattr(torch, "_fused_sdp_choice", None)
+        if choose_backend is not None:
+            try:
+                backend = choose_backend(q, k, v, biases[0], scale=1.0)
+            except (NotImplementedError, RuntimeError, TypeError):
+                backend = None
+            if backend == int(torch.nn.attention.SDPBackend.EFFICIENT_ATTENTION):
+                return nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=biases[0], scale=1.0
+                )
+    if bytes_per_query > budget and q.ndim > 3 and q.shape[0]:
+        # Index broadcast batch dimensions as views, including shared biases.
+        out = torch.empty_like(q)
+        for row in range(q.shape[0]):
+            sliced = [
+                b[row if b.shape[0] > 1 else 0] if b.ndim == q.ndim else b
+                for b in biases
+            ]
+            out[row] = _bounded_attention(
+                q[row], k[row], v[row], sliced, use_sdpa=use_sdpa
+            )
+        return out
+    block = max(1, budget // max(1, bytes_per_query))
+
+    def attend(start, end):
+        query = q[..., start:end, :]
+        sliced = [b if b.shape[-2] == 1 else b[..., start:end, :] for b in biases]
+        if use_sdpa:
+            return nn.functional.scaled_dot_product_attention(
+                query, k, v, attn_mask=sliced[0], scale=1.0
+            )
+        return _attention(query, k, v, sliced)
+
+    if q.shape[-2] <= block:
+        return attend(0, q.shape[-2])
+    out = torch.empty_like(q)
+    for start in range(0, q.shape[-2], block):
+        out[..., start : start + block, :] = attend(start, start + block)
+    return out
 
 
 @torch.jit.ignore
@@ -545,6 +602,8 @@ class Attention(nn.Module):
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_flash: bool = False,
         flash_mask: torch.Tensor | None = None,
+        use_sdpa: bool = False,
+        triangle_mask_is_raw: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -555,17 +614,12 @@ class Attention(nn.Module):
             biases:
                 List of biases that broadcast to [*, H, Q, K]
             use_memory_efficient_kernel:
-                Whether to use a custom memory-efficient attention kernel.
-                This should be the default choice for most. If none of the
-                "use_<...>" flags are True, a stock PyTorch implementation
-                is used instead
+                Accepted for older callers. Uses the selected attention backend.
             use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory-efficient attention kernel.
-                If none of the "use_<...>" flags are True, a stock PyTorch
-                implementation is used instead
+                Accepted for older callers. Native attention is used.
             use_cuequivariance_attention:
                 Whether to use cuEquivariance triangle attention kernel.
-                Falls back to DeepSpeed or naive if unsupported shapes.
+                Uses bounded PyTorch attention for unsupported shapes.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -574,6 +628,8 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
+            triangle_mask_is_raw:
+                The first triangle bias is a keep mask. Convert it for PyTorch.
         Returns
             [*, Q, C_q] attention update
         """
@@ -589,63 +645,45 @@ class Attention(nn.Module):
                 "use flash_mask instead"
             )
 
-        attn_options = [
-            use_memory_efficient_kernel,
-            use_deepspeed_evo_attention or use_cuequivariance_attention,
-            use_lma,
-            use_flash,
-        ]
+        attn_options = [use_cuequivariance_attention, use_lma, use_flash]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
-        if use_cuequivariance_attention:
-            if biases is None or len(biases) != 2:
-                raise ValueError(
-                    "cuEquivariance attention requires exactly two bias terms"
-                )
-
+        triangle_mask_is_raw = triangle_mask_is_raw or use_cuequivariance_attention
+        if triangle_mask_is_raw and (biases is None or len(biases) != 2):
+            raise ValueError("Triangle attention requires exactly two bias terms")
         if biases is None:
             biases = []
 
-        # cuEquivariance fallback: if shape is unsupported, fall back to DeepSpeed
-        if use_cuequivariance_attention:
-            if cueq_would_fall_back(
-                q_x.shape[-2], self.c_hidden, q_x.dtype
-            ):
-                # Convert raw mask back to inf-scaled for non-cueq paths
-                _inf = getattr(self, "inf", 1e9)
-                biases[0] = _inf * (biases[0] - 1)
-                use_cuequivariance_attention = False
-                use_deepspeed_evo_attention = True
+        use_cuequivariance_attention = (
+            use_cuequivariance_attention
+            and q_x.is_cuda
+            and not cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype)
+        )
 
-        # cuEquivariance and DeepSpeed apply scaling internally
+        # cuEquivariance applies scaling internally
         q, k, v = self._prep_qkv(
-            q_x, kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cuequivariance_attention),
+            q_x,
+            kv_x,
+            apply_scale=not use_cuequivariance_attention,
         )
 
         if use_cuequivariance_attention:
-            if not cueq_is_installed:
-                raise ValueError(
-                    "use_cuequivariance_attention is True but cuequivariance_torch is not installed"
-                )
             try:
                 # biases[0] = mask, biases[1] = triangle_bias
                 o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
             except (RuntimeError, TypeError, OSError):
-                # Triton compilation failure (e.g. missing ptxas); fall back
-                _inf = getattr(self, "inf", 1e9)
-                biases[0] = _inf * (biases[0] - 1)
-                q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
-                o = _deepspeed_evo_attn(q, k, v, biases)
-                use_cuequivariance_attention = False
-        elif use_deepspeed_evo_attention:
-            if len(biases) > 2:
-                raise ValueError(
-                    "If use_deepspeed_evo_attention is True, you may only "
-                    "provide up to two bias terms"
-                )
-            o = _deepspeed_evo_attn(q, k, v, biases)
+                # The native fallback applies the scale if the kernel fails.
+                q = q / math.sqrt(self.c_hidden)
+            else:
+                return self._wrap_up(o, q_x)
+
+        if triangle_mask_is_raw:
+            inf = getattr(self, "inf", 1e9)
+            biases = [triangle_mask_bias(biases[0], q_x, inf), biases[1]]
+
+        if use_cuequivariance_attention:
+            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         elif use_lma:
             biases = [
                 b.expand((*b.shape[:-2], q_x.shape[-2], kv_x.shape[-2])) for b in biases
@@ -654,6 +692,15 @@ class Attention(nn.Module):
             o = o.transpose(-2, -3)
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
+        elif (
+            use_sdpa
+            and len(biases) == 1
+            and biases[0].dtype in (q.dtype, torch.float32)
+        ):
+            # _prep_qkv already scaled Q. Keep the pair bias broadcast across rows.
+            o = _bounded_attention(q, k, v, biases, use_sdpa=True).transpose(-2, -3)
+        elif hasattr(self, "inf"):
+            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         else:
             o = _attention(q, k, v, biases)
             o = o.transpose(-2, -3)
@@ -750,74 +797,6 @@ class GlobalAttention(nn.Module):
         m = self.linear_o(o)
 
         return m
-
-
-@torch.jit.ignore
-def _deepspeed_evo_attn(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    biases: list[torch.Tensor],
-):
-    """ ""
-    Compute attention using the DeepSpeed DS4Sci_EvoformerAttention kernel.
-
-    Args:
-        q:
-            [*, H, Q, C_hidden] query data
-        k:
-            [*, H, K, C_hidden] key data
-        v:
-            [*, H, V, C_hidden] value data
-        biases:
-            List of biases that broadcast to [*, H, Q, K]
-    """
-
-    if not ds4s_is_installed:
-        raise ValueError(
-            "_deepspeed_evo_attn requires that DeepSpeed be installed "
-            "and that the deepspeed.ops.deepspeed4science package exists"
-        )
-
-    def reshape_dims(x):
-        no_batch_dims = len(x.shape[:-3])
-        if no_batch_dims < 2:
-            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
-        if no_batch_dims > 2:
-            return x.reshape(*((x.shape[0], -1, *x.shape[-3:])))
-        return x
-
-    # [*, Q/K, H, C_hidden]
-    q = q.transpose(-2, -3)
-    k = k.transpose(-2, -3)
-    v = v.transpose(-2, -3)
-
-    # Reshape tensors to match expected input shape [B, N, Q/K, H, C_hidden]
-    # for DS4Sci_EvoformerAttention() by adding or flattening batch dims as needed.
-    orig_shape = q.shape
-    if len(orig_shape[:-3]) != 2:
-        q = reshape_dims(q)
-        k = reshape_dims(k)
-        v = reshape_dims(v)
-        biases = [reshape_dims(b) for b in biases]
-
-    # DeepSpeed attn. kernel requires inputs to be type bf16 or fp16
-    # Cast to bf16 so kernel can be used during inference
-    orig_dtype = q.dtype
-    if orig_dtype not in [torch.bfloat16, torch.float16]:
-        o = DS4Sci_EvoformerAttention(
-            q.to(dtype=torch.bfloat16),
-            k.to(dtype=torch.bfloat16),
-            v.to(dtype=torch.bfloat16),
-            [b.to(dtype=torch.bfloat16) for b in biases],
-        )
-
-        o = o.to(dtype=orig_dtype)
-    else:
-        o = DS4Sci_EvoformerAttention(q, k, v, biases)
-
-    o = o.reshape(orig_shape)
-    return o
 
 
 def _lma(

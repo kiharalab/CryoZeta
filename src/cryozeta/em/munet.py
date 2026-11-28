@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
@@ -429,10 +430,11 @@ class ResidueMUNet(nn.Module):
 
 
 def get_detection_model(
-    load_pretrained=True, compile=True, checkpoint_path: str | None = None
+    load_pretrained=True, compile=True, checkpoint_path: str | None = None, device=None
 ):
 
-    model = ResidueMUNet(atom_mdl=MUNet(n_classes=9), n_classes=25)
+    with torch.device("meta") if load_pretrained else nullcontext():
+        model = ResidueMUNet(atom_mdl=MUNet(n_classes=9), n_classes=25)
 
     if load_pretrained:
         model_path = (
@@ -440,7 +442,11 @@ def get_detection_model(
             if checkpoint_path is not None
             else resolve_asset_path("cryozeta-detection-v0.0.1.safetensors")
         )
+        target_device = torch.get_default_device() if device is None else device
+        model.to_empty(device=target_device)
         model.load_state_dict(load_file(str(model_path)))
+    elif device is not None:
+        model.to(device)
 
     if compile:
         model = torch.compile(model)

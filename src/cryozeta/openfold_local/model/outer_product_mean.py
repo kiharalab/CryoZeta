@@ -13,22 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from functools import partial
 
 import torch
 import torch.nn as nn
 
+from cryozeta.model.modules.opm import opm_chunked
 from cryozeta.openfold_local.model.primitives import Linear
-from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
-from cryozeta.model.modules.opm_tilelang import opm_chunked
-
-try:
-    from cryozeta.model.modules.opm_tilelang import opm_tilelang
-    _tilelang_available = True
-except (ImportError, OSError, RuntimeError):
-    _tilelang_available = False
 
 
 class OuterProductMean(nn.Module):
@@ -36,7 +27,7 @@ class OuterProductMean(nn.Module):
     Implements Algorithm 10.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, eps=1e-3, use_tilelang=False):
+    def __init__(self, c_m, c_z, c_hidden, eps=1e-3):
         """
         Args:
             c_m:
@@ -52,58 +43,29 @@ class OuterProductMean(nn.Module):
         self.c_z = c_z
         self.c_hidden = c_hidden
         self.eps = eps
-        self.use_tilelang = use_tilelang and _tilelang_available
 
         self.layer_norm = nn.LayerNorm(c_m)
         self.linear_1 = Linear(c_m, c_hidden)
         self.linear_2 = Linear(c_m, c_hidden)
         self.linear_out = Linear(c_hidden**2, c_z, init="final")
 
-    def _opm(self, a, b):
-        # [*, N_res, N_res, C, C]
-        outer = torch.einsum("...bac,...dae->...bdce", a, b)
-
-        # [*, N_res, N_res, C * C]
-        outer = outer.reshape((*outer.shape[:-2], -1))
-
-        # [*, N_res, N_res, C_z]
-        outer = self.linear_out(outer)
-
-        return outer
-
-    @torch.jit.ignore
-    def _chunk(self, a: torch.Tensor, b: torch.Tensor, chunk_size: int) -> torch.Tensor:
-        # Since the "batch dim" in this case is not a true batch dimension
-        # (in that the shape of the output depends on it), we need to
-        # iterate over it ourselves
-        a_reshape = a.reshape((-1, *a.shape[-3:]))
-        b_reshape = b.reshape((-1, *b.shape[-3:]))
-        out = []
-        for a_prime, b_prime in zip(a_reshape, b_reshape):
-            outer = chunk_layer(
-                partial(self._opm, b=b_prime),
-                {"a": a_prime},
-                chunk_size=chunk_size,
-                no_batch_dims=1,
-            )
-            out.append(outer)
-
-        # For some cursed reason making this distinction saves memory
-        if len(out) == 1:
-            outer = out[0].unsqueeze(0)
-        else:
-            outer = torch.stack(out, dim=0)
-
-        outer = outer.reshape(a.shape[:-3] + outer.shape[1:])
-
-        return outer
+    def _project_by_sequence(self, m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # Write projections directly in contraction order [N_res, N_seq, H].
+        # Only one slice of normalized input is needed at a time.
+        n_seq, n_res, _ = m.shape
+        a = m.new_empty(n_res, n_seq, self.c_hidden)
+        b = torch.empty_like(a)
+        for start in range(0, n_seq, 32):
+            end = min(start + 32, n_seq)
+            normalized = self.layer_norm(m[start:end])
+            a[:, start:end] = self.linear_1(normalized).transpose(0, 1)
+            b[:, start:end] = self.linear_2(normalized).transpose(0, 1)
+        return a, b
 
     def _forward(
         self,
         m: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
-        inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -114,57 +76,71 @@ class OuterProductMean(nn.Module):
         Returns:
             [*, N_res, N_res, C_z] pair embedding update
         """
-        if mask is None:
+        unmasked = (
+            mask is None
+            and isinstance(self.eps, (float, int))
+            and m.is_cuda
+            and not torch.is_grad_enabled()
+            and m.dtype == torch.bfloat16
+            and 0 < m.shape[-3] <= 4096
+            and not torch.compiler.is_compiling()
+            and (
+                not torch.is_autocast_enabled("cuda")
+                or torch.get_autocast_dtype("cuda") == m.dtype
+            )
+        )
+        if mask is None and not unmasked:
             mask = m.new_ones(m.shape[:-1])
 
-        # [*, N_seq, N_res, C_m]
-        ln = self.layer_norm(m)
+        # The tiled projection only uses PyTorch LayerNorm and Linear.
+        if (
+            unmasked
+            and m.ndim == 3
+            and m.shape[-1] == self.c_m
+            and 1024 <= m.shape[0]
+            and 1024 <= m.shape[1] <= 4096
+            and self.c_m == 256
+            and self.c_hidden == 128
+        ):
+            a, b = self._project_by_sequence(m)
+        else:
+            # [*, N_seq, N_res, C_m]
+            ln = self.layer_norm(m)
 
-        # [*, N_seq, N_res, C]
-        mask = mask.unsqueeze(-1)
-        a = self.linear_1(ln)
-        a = a * mask
+            # [*, N_seq, N_res, C]
+            if mask is not None:
+                mask = mask.unsqueeze(-1)
+            a = self.linear_1(ln)
+            if mask is not None:
+                a = a * mask
 
-        b = self.linear_2(ln)
-        b = b * mask
+            b = self.linear_2(ln)
+            if mask is not None:
+                b = b * mask
 
-        del ln
+            del ln
 
-        # Transpose to [*, N_res, N_seq, C]
-        a = a.transpose(-2, -3).contiguous()
-        b = b.transpose(-2, -3).contiguous()
+            # Transpose to [*, N_res, N_seq, C]
+            a = a.transpose(-2, -3).contiguous()
+            b = b.transpose(-2, -3).contiguous()
 
         # Norm: [*, N_res, N_res]
-        norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
-        norm = (norm + self.eps).squeeze(-1)
-
-        if self.use_tilelang:
-            return opm_tilelang(
-                a, b, self.linear_out.weight, self.linear_out.bias, norm
-            )
-
-        if os.environ.get("USE_OPM_CHUNKED", "1") == "1":
-            return opm_chunked(
-                a, b, self.linear_out.weight, self.linear_out.bias, norm
-            )
-
-        # Original einsum path
-        if chunk_size is not None:
-            outer = self._chunk(a, b, chunk_size)
+        if mask is None:
+            # Retain the two BF16 roundings of the all-ones contraction and
+            # subsequent epsilon addition (important for odd sequence sizes).
+            norm = m.new_full((), m.shape[-3]) + self.eps
         else:
-            outer = self._opm(a, b)
-        outer = outer / norm.unsqueeze(-1)
-        return outer
+            norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
+            norm = (norm + self.eps).squeeze(-1)
+
+        return opm_chunked(a, b, self.linear_out.weight, self.linear_out.bias, norm)
 
     def forward(
         self,
         m: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
-        inplace_safe: bool = False,
     ) -> torch.Tensor:
         if is_fp16_enabled():
             with torch.amp.autocast("cuda", enabled=False):
-                return self._forward(m.float(), mask, chunk_size, inplace_safe)
-        else:
-            return self._forward(m, mask, chunk_size, inplace_safe)
+                return self._forward(m.float(), mask)
+        return self._forward(m, mask)

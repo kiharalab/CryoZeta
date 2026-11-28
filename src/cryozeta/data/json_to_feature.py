@@ -309,24 +309,6 @@ class SampleDictToFeatures:
 
         featurizer = Featurizer(token_array, atom_array)
         feature_dict = featurizer.get_all_input_features()
-
-        token_array_with_frame = featurizer.get_token_frame(
-            token_array=token_array,
-            atom_array=atom_array,
-            ref_pos=feature_dict["ref_pos"],
-            ref_mask=feature_dict["ref_mask"],
-        )
-
-        # [N_token]
-        feature_dict["has_frame"] = torch.Tensor(
-            token_array_with_frame.get_annotation("has_frame")
-        ).long()
-
-        # [N_token, 3]
-        feature_dict["frame_atom_index"] = torch.Tensor(
-            token_array_with_frame.get_annotation("frame_atom_index")
-        ).long()
-
         feature_dict["pdb_id"] = self.single_sample_dict["name"]
         map_path = self.single_sample_dict.get("map_path", None)
         feature_dict["map_path"] = map_path
@@ -345,9 +327,7 @@ class SampleDictToFeatures:
         name = self.single_sample_dict["name"]
         em_file_path = self.single_sample_dict.get("em_file")
         if em_file_path is None or not em_file_path:
-            em_file_path = (
-                f"{self.em_file_dir}/{name}/CryoZeta-Detection/{name}.pt"
-            )
+            em_file_path = f"{self.em_file_dir}/{name}/CryoZeta-Detection/{name}.pt"
         em = parse_mrc(
             None,
             n_supportpoints,

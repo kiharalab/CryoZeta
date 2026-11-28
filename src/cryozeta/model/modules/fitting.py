@@ -26,7 +26,7 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from loguru import logger
 from scipy.spatial import KDTree
 
-from cryozeta.em.strucblur import calculate_ccc_ovr
+from cryozeta.em.strucblur import MapScorer
 from cryozeta.model.modules.calc_descriptors import compute_descriptors
 
 # =============================================================================
@@ -166,6 +166,8 @@ def FitModelPointsTeaser(
     map_path: str | None = None,
     resolution: float | None = None,
     contour_level: float | None = None,
+    *,
+    score_map: MapScorer | None = None,
 ) -> torch.Tensor | None:
     """
     Fit model points to support points using TEASER++ followed by GICP refinement.
@@ -191,9 +193,12 @@ def FitModelPointsTeaser(
         map_path: Optional path to EM map file (default: None)
         resolution: Optional resolution of EM map (default: None)
         contour_level: Optional contour level for EM map (default: None)
+        score_map: Optional scorer shared across fitting methods.
     Returns:
         Transformed all_atom coordinates, or None if fitting failed
     """
+    if score_map is None:
+        score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -209,61 +214,39 @@ def FitModelPointsTeaser(
 
     all_atom_fitted = all_atom_np.copy()
 
-    for sample_idx in range(n_sample):
-        # Get query points (predicted CA coordinates for this sample)
-        query_points = ca_coordinate_np[sample_idx]
-        logger.info(f"Sample {sample_idx}: Query points: {len(query_points)}")
+    if n_sample == 0:
+        return None, recall_score_list, ccc_mask_list, ccc_box_list
 
-        # Create point clouds and estimate normals
-        logger.info(f"Sample {sample_idx}: Estimating normals for reference...")
-        ref_pcd = o3d.geometry.PointCloud()
-        ref_pcd.points = o3d.utility.Vector3dVector(ref_points)
-        ref_pcd.estimate_normals(
+    def describe(points):
+        cloud = o3d.geometry.PointCloud()
+        cloud.points = o3d.utility.Vector3dVector(points)
+        cloud.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamHybrid(
                 radius=r_for_normal, max_nn=nn_for_normal
             )
         )
-
-        logger.info(f"Sample {sample_idx}: Estimating normals for query...")
-        query_pcd = o3d.geometry.PointCloud()
-        query_pcd.points = o3d.utility.Vector3dVector(query_points)
-        query_pcd.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(
-                radius=r_for_normal, max_nn=nn_for_normal
-            )
-        )
-
-        # Stage 1: Compute descriptors and run TEASER++
-        logger.info(
-            f"Sample {sample_idx}: Computing {desc_type} descriptors for reference..."
-        )
-        ref_descriptors = compute_descriptors(
-            np.asarray(ref_pcd.points),
-            np.asarray(ref_pcd.normals),
+        return compute_descriptors(
+            np.asarray(cloud.points),
+            np.asarray(cloud.normals),
             radius=desc_r,
             n_scales=desc_scales,
             descriptor_choice=desc_type,
             min_neighborhood_size=min_neighborhood_size,
             phi=phi,
             rho=rho,
-            n_procs=32,
+            # Inference already has CUDA and native thread pools initialized.
+            # Compute SHOT in this process to avoid forking that state.
+            n_procs=1,
         )
-        logger.info(f"Sample {sample_idx}:   Descriptor shape: {ref_descriptors.shape}")
 
+    logger.info(f"Computing {desc_type} descriptors for reference...")
+    ref_descriptors = describe(ref_points)
+    for sample_idx in range(n_sample):
+        query_points = ca_coordinate_np[sample_idx]
         logger.info(
             f"Sample {sample_idx}: Computing {desc_type} descriptors for query..."
         )
-        query_descriptors = compute_descriptors(
-            np.asarray(query_pcd.points),
-            np.asarray(query_pcd.normals),
-            radius=desc_r,
-            n_scales=desc_scales,
-            descriptor_choice=desc_type,
-            min_neighborhood_size=min_neighborhood_size,
-            phi=phi,
-            rho=rho,
-            n_procs=32,
-        )
+        query_descriptors = describe(query_points)
         logger.info(
             f"Sample {sample_idx}:   Descriptor shape: {query_descriptors.shape}"
         )
@@ -386,13 +369,7 @@ def FitModelPointsTeaser(
             all_atom_np[sample_idx] @ combined_transform[:3, :3].T
             + combined_transform[:3, 3]
         )
-        ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-            all_atom_fitted[sample_idx],
-            elements,
-            map_path=map_path,
-            resolution=resolution,
-            contour_level=contour_level,
-        )
+        ccc_mask, _, ccc_box, _ = score_map(all_atom_fitted[sample_idx], elements)
         ccc_mask_list[sample_idx] = ccc_mask
         ccc_box_list[sample_idx] = ccc_box
 
@@ -631,7 +608,11 @@ def FitModelPoints(
     map_path: str | None = None,
     resolution: float | None = None,
     contour_level: float | None = None,
+    *,
+    score_map: MapScorer | None = None,
 ):
+    if score_map is None:
+        score_map = MapScorer(map_path, resolution, contour_level)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -675,13 +656,7 @@ def FitModelPoints(
         recall = calculate_query_recall(
             all_support_points, ca_coordinate_fitted[i], distance_threshold=3.0
         )
-        ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-            all_atom_fitted[i],
-            elements,
-            map_path=map_path,
-            resolution=resolution,
-            contour_level=contour_level,
-        )
+        ccc_mask, _, ccc_box, _ = score_map(all_atom_fitted[i], elements)
         recall_score_list[i] = recall
         ccc_mask_list[i] = ccc_mask
         ccc_box_list[i] = ccc_box
@@ -768,6 +743,7 @@ def FitModelVESPER(
 
     from cryozeta.data.utils import save_atoms_to_cif
 
+    score_map = MapScorer(map_path, resolution_map, contour_level_map)
     n_sample = all_atom.shape[0]
     recall_score_list = [0] * n_sample
     ccc_mask_list = [0] * n_sample
@@ -891,12 +867,8 @@ def FitModelVESPER(
                 recall_score_list[sample_idx] = calculate_query_recall(
                     ref_points, query_points, distance_threshold=3.0
                 )
-                ccc_mask, _, ccc_box, _ = calculate_ccc_ovr(
-                    all_atom_fitted[sample_idx],
-                    atom_array.element,
-                    map_path=map_path,
-                    resolution=resolution_map,
-                    contour_level=contour_level_map,
+                ccc_mask, _, ccc_box, _ = score_map(
+                    all_atom_fitted[sample_idx], atom_array.element
                 )
                 ccc_mask_list[sample_idx] = ccc_mask
                 ccc_box_list[sample_idx] = ccc_box

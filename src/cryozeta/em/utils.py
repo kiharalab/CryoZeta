@@ -301,7 +301,7 @@ def sliding_window_inference(
         dtype=torch.float,
     )
     count_map = torch.zeros(
-        (1, output_num_channels, depth, height, width),
+        (1, 1, depth, height, width),
         device=output_device,
         dtype=torch.float,
     )
@@ -310,7 +310,7 @@ def sliding_window_inference(
     # Collect all possible coordinates
     coords = []
     starts_set = set()
-    num_voxels = 0
+    nonempty = []
     for z in range(0, depth, stride):
         for y in range(0, height, stride):
             for x in range(0, width, stride):
@@ -323,13 +323,17 @@ def sliding_window_inference(
                 if (z_start, y_start, x_start) in starts_set:
                     continue
                 starts_set.add((z_start, y_start, x_start))
-                num_voxels += 1
                 sub_volume = input_map[
                     :, :, z_start:z_end, y_start:y_end, x_start:x_end
                 ]
-                if torch.all(sub_volume == 0):
-                    continue
+                nonempty.append(torch.any(sub_volume != 0))
                 coords.append((z_start, y_start, x_start, z_end, y_end, x_end))
+
+    num_voxels = len(coords)
+    # Transfer all occupancy flags together to avoid synchronizing CUDA per ROI.
+    if nonempty:
+        coords = [c for c, keep in zip(coords, torch.stack(nonempty).tolist()) if keep]
+    del nonempty
 
     logger.info(
         f"Number of non-empty ROIs / All possible ROIs: {len(coords)} / {num_voxels}"
@@ -348,7 +352,7 @@ def sliding_window_inference(
             batch_tensor = torch.cat(
                 [
                     batch_tensor,
-                    torch.zeros(batch_diff, *batch_tensor.shape[1:], device=device),
+                    batch_tensor.new_zeros((batch_diff, *batch_tensor.shape[1:])),
                 ],
                 dim=0,
             )
@@ -358,7 +362,7 @@ def sliding_window_inference(
             model_output = model_output[0]
 
         if batch_diff > 0:
-            model_output = model_output[:batch_size]
+            model_output = model_output[: len(batch_coords)]
 
         model_output = model_output.to(output_device)
 
@@ -385,6 +389,7 @@ def sliding_window_inference(
         del model_output
 
     # Normalize each output map by its count map
-    output_map[count_map > 0] /= count_map[count_map > 0]
+    count_map.masked_fill_(count_map == 0, 1)
+    output_map.div_(count_map)
 
     return output_map  # Return a tuple of all normalized output maps

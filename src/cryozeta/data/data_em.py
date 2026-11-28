@@ -18,6 +18,10 @@ import torch
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
 
+_MANIFOLD_MIN_BIN = 2.3125
+_MANIFOLD_MAX_BIN = 21.6875
+_MANIFOLD_BINS = 50
+
 
 def make_one_hot(x, num_classes):
     """Convert integer tensor to one-hot encoding.
@@ -49,20 +53,35 @@ def manifold_connection(assign_conf, num_clust=None):
     return manifold_connection
 
 
+def _distance_bin_indices(distance, min_bin, max_bin, no_bins):
+    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
+    # Nonnegative, ascending distance thresholds keep linspace ordered.
+    if not 0 <= min_bin <= max_bin <= torch.finfo(boundaries.dtype).max:
+        return torch.sum(distance[..., None] > boundaries, dim=-1)
+
+    # A value equal to a boundary belongs in the lower bin. A NaN compares
+    # false against every boundary, so restore bin zero after bucketizing.
+    indices = torch.bucketize(distance.contiguous(), boundaries, right=False)
+    if distance.is_floating_point():
+        indices.masked_fill_(distance.isnan(), 0)
+    return indices
+
+
 def manifold_distance(
     assign_conf,
     distance,
     high_res=True,
     eps=1e-9,
-    min_bin=2.3125,
-    max_bin=21.6875,
-    no_bins=50,
+    min_bin=_MANIFOLD_MIN_BIN,
+    max_bin=_MANIFOLD_MAX_BIN,
+    no_bins=_MANIFOLD_BINS,
 ):
-    """Compute shortest-path distances within clusters and bin them.
+    """Bin pairwise distances, using within-cluster shortest paths at low resolution.
 
     Args:
         assign_conf: Tensor of shape (p,) with cluster assignments
         distance: Pairwise distance matrix of shape (p, p)
+        high_res: Whether to bin the input distances directly
         eps: Small epsilon value
         min_bin: Minimum bin boundary
         max_bin: Maximum bin boundary
@@ -71,24 +90,23 @@ def manifold_distance(
     Returns:
         One-hot binned distance features of shape (p, p, no_bins)
     """
-    clusters = torch.unique(assign_conf)
-    max_dist = torch.max(distance)
-    ret_manifold = torch.zeros_like(distance).double()
-
-    for cluster in clusters:
-        mask = torch.where(assign_conf == cluster, 1, 0)
-        mask = mask[..., None] * mask[None, ...]
-        dist = torch.where(mask == 1, distance, max_dist + 1)
-        graph = csr_matrix(dist)
-        dist_matrix = shortest_path(csgraph=graph, directed=False)
-        dist_matrix = torch.tensor(dist_matrix)
-        ret_manifold += dist_matrix * mask
-
-    # Bin distances
     if not high_res:
+        clusters = torch.unique(assign_conf)
+        max_dist = torch.max(distance)
+        ret_manifold = torch.zeros_like(distance).double()
+
+        for cluster in clusters:
+            mask = torch.where(assign_conf == cluster, 1, 0)
+            mask = mask[..., None] * mask[None, ...]
+            dist = torch.where(mask == 1, distance, max_dist + 1)
+            graph = csr_matrix(dist)
+            dist_matrix = shortest_path(csgraph=graph, directed=False)
+            dist_matrix = torch.tensor(dist_matrix)
+            ret_manifold += dist_matrix * mask
+
         distance = ret_manifold
-    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
-    distance_bins = torch.sum(distance[..., None] > boundaries, dim=-1)
+
+    distance_bins = _distance_bin_indices(distance, min_bin, max_bin, no_bins)
     distance_feature = make_one_hot(distance_bins, no_bins)
 
     return distance_feature
@@ -185,42 +203,33 @@ def PointPairRepresentationEmbedding(
     w_point[:, :, 0:3] = orientation / norm
 
     # Distance feature: binned pairwise distances (39D)
-    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1)
     distance = torch.cdist(Q, Q)
-    distance_bins = torch.sum(distance[..., None] > boundaries, dim=-1)
-    distance_feature = make_one_hot(distance_bins, no_bins)
-    w_point[:, :, 3:42] = distance_feature
+    distance_bins = _distance_bin_indices(distance, min_bin, max_bin, no_bins)
+    if no_bins == 39:
+        w_point[:, :, 3:42].scatter_(-1, distance_bins.unsqueeze(-1), 1)
+    else:
+        w_point[:, :, 3:42] = make_one_hot(distance_bins, no_bins)
 
     # Confidence feature: endpoint confidence values (6D)
-    point_confidence = take_confidence_endpoints(ca_prob)
+    w_point[:, :, 42:45] = ca_prob[None, :, :]
+    w_point[:, :, 45:48] = ca_prob[:, None, :]
 
     if use_interpolate_confidence:
         # Interpolated confidence (15D)
-        interpolate_confidence = M_conf
-        interpolate_confidence = interpolate_confidence.view(p, p, -1)
-        confidence_feature = torch.cat(
-            [point_confidence, interpolate_confidence], dim=-1
-        )
-        w_point[:, :, 42:63] = confidence_feature
-
-        # Manifold distance feature (50D)
-        manifold_distance_feature = manifold_distance(assign_conf, distance)
-        w_point[:, :, 63:113] = manifold_distance_feature
-
-        # Manifold connection feature (1D)
-        manifold_connection_feature = manifold_connection(assign_conf, num_clust)
-        w_point[:, :, 113] = manifold_connection_feature
+        w_point[:, :, 48:63] = M_conf.view(p, p, 15)
+        manifold_start = 63
     else:
-        # Confidence feature (6D)
-        w_point[:, :, 42:48] = point_confidence
+        manifold_start = 48
 
-        # Manifold distance feature (50D)
-        manifold_distance_feature = manifold_distance(assign_conf, distance)
-        w_point[:, :, 48:98] = manifold_distance_feature
-
-        # Manifold connection feature (1D)
-        manifold_connection_feature = manifold_connection(assign_conf, num_clust)
-        w_point[:, :, 98] = manifold_connection_feature
+    # High-resolution manifold bins use the original pairwise distances.
+    manifold_end = manifold_start + _MANIFOLD_BINS
+    manifold_bins = _distance_bin_indices(
+        distance, _MANIFOLD_MIN_BIN, _MANIFOLD_MAX_BIN, _MANIFOLD_BINS
+    )
+    w_point[:, :, manifold_start:manifold_end].scatter_(
+        -1, manifold_bins.unsqueeze(-1), 1
+    )
+    w_point[:, :, manifold_end] = manifold_connection(assign_conf, num_clust)
 
     return w_point
 
@@ -246,12 +255,10 @@ def pointResiduePairRepresentationEmbedding(aatype, asym_ids, Q, A_conf, p, r):
     x = torch.zeros(p, r, 32 + 28 + 64 + 1)
 
     # Amino acid features (32D)
-    aatype_feature = torch.tile(aatype, (p, 1, 1))
-    x[:, :, 0:32] = aatype_feature
+    x[:, :, 0:32] = aatype
 
     # Confidence features (28D)
-    amino_confidence = torch.tile(A_conf.unsqueeze(1), (1, r, 1))
-    x[:, :, 32:60] = amino_confidence
+    x[:, :, 32:60] = A_conf.unsqueeze(1)
 
     # Sinusoidal positional encoding (64D)
     pos_emd = get_1d_sincos_pos_embed_from_grid(64, asym_ids)

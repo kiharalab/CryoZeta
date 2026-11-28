@@ -98,6 +98,8 @@ class ConfidenceHead(nn.Module):
             dropout=pairformer_dropout,
             blocks_per_ckpt=blocks_per_ckpt,
         )
+        for block in self.pairformer_stack.blocks:
+            block.pair_transition.inference_hidden_budget_bytes = 1024**3
         self.linear_no_bias_pae = LinearNoBias(
             in_features=self.c_z, out_features=self.b_pae
         )
@@ -158,8 +160,8 @@ class ConfidenceHead(nn.Module):
                 [..., N_token, N_token]
             x_pred_coords (torch.Tensor): predicted coordinates
                 [..., N_sample, N_atoms, 3]
-            use_memory_efficient_kernel (bool, optional): Whether to use memory-efficient kernel. Defaults to False.
-            use_deepspeed_evo_attention (bool, optional): Whether to use DeepSpeed evolutionary attention. Defaults to False.
+            use_memory_efficient_kernel (bool, optional): Legacy argument retained for compatibility.
+            use_deepspeed_evo_attention (bool, optional): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool, optional): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool, optional): Whether to use cuEquivariance multiplicative update. Defaults to False.
             use_lma (bool, optional): Whether to use low-memory attention. Defaults to False.
@@ -197,6 +199,15 @@ class ConfidenceHead(nn.Module):
             torch.cuda.empty_cache()
 
         plddt_preds, pae_preds, pde_preds, resolved_preds = [], [], [], []
+        offloaded_logits = None
+        keep_logits_on_cpu = z_trunk.shape[-2] > 2000 and not self.training
+        can_stage_logits = (
+            z_trunk.is_cuda
+            and not self.training
+            and not torch.is_grad_enabled()
+            and N_sample > 1
+            and not keep_logits_on_cpu
+        )
         for i in range(N_sample):
             plddt_pred, pae_pred, pde_pred, resolved_pred = (
                 self.memory_efficient_forward(
@@ -206,7 +217,6 @@ class ConfidenceHead(nn.Module):
                     pair_mask=pair_mask,
                     x_pred_rep_coords=x_pred_rep_coords[..., i, :, :],
                     use_memory_efficient_kernel=use_memory_efficient_kernel,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
                     use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -215,25 +225,41 @@ class ConfidenceHead(nn.Module):
                     chunk_size=chunk_size,
                 )
             )
-            if z_trunk.shape[-2] > 2000 and (not self.training):
-                # cpu offload pae_preds/pde_preds
+            if keep_logits_on_cpu:
                 pae_pred = pae_pred.cpu()
                 pde_pred = pde_pred.cpu()
                 torch.cuda.empty_cache()
+            if (
+                i == 0
+                and can_stage_logits
+                and (N_sample - 1) * (pae_pred.nbytes + pde_pred.nbytes) > 2 * 1024**3
+            ):
+                # Keep earlier samples off the GPU while later samples run.
+                offloaded_logits = tuple(
+                    torch.empty(
+                        (*pred.shape[:-3], N_sample, *pred.shape[-3:]),
+                        dtype=pred.dtype,
+                        device="cpu",
+                    )
+                    for pred in (pae_pred, pde_pred)
+                )
+            if offloaded_logits is None:
+                pae_preds.append(pae_pred)
+                pde_preds.append(pde_pred)
+            else:
+                offloaded_logits[0].select(-4, i).copy_(pae_pred)
+                offloaded_logits[1].select(-4, i).copy_(pde_pred)
+                del pae_pred, pde_pred
             plddt_preds.append(plddt_pred)
-            pae_preds.append(pae_pred)
-            pde_preds.append(pde_pred)
             resolved_preds.append(resolved_pred)
         plddt_preds = torch.stack(
             plddt_preds, dim=-3
         )  # [..., N_sample, N_atom, plddt_bins]
-        # Pae_preds/pde_preds single tensor will occupy 11.6G[BF16]/23.2G[FP32]
-        pae_preds = torch.stack(
-            pae_preds, dim=-4
-        )  # [..., N_sample, N_token, N_token, pae_bins]
-        pde_preds = torch.stack(
-            pde_preds, dim=-4
-        )  # [..., N_sample, N_token, N_token, pde_bins]
+        if offloaded_logits is None:
+            pae_preds = torch.stack(pae_preds, dim=-4)
+            pde_preds = torch.stack(pde_preds, dim=-4)
+        else:
+            pae_preds, pde_preds = (logits.to(z_trunk.device) for logits in offloaded_logits)
         resolved_preds = torch.stack(
             resolved_preds, dim=-3
         )  # [..., N_sample, N_atom, 2]
@@ -274,7 +300,6 @@ class ConfidenceHead(nn.Module):
             z_pair,
             pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,

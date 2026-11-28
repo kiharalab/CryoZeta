@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.12-blue?logo=python)](https://python.org)
 [![CUDA](https://img.shields.io/badge/CUDA-11%20%7C%2012%20%7C%2013-green?logo=nvidia)](https://developer.nvidia.com/cuda-toolkit)
-[![pixi](https://img.shields.io/badge/pixi-0.41.1-blue?logo=pixi)](https://pixi.sh)
+[![pixi](https://img.shields.io/badge/pixi-0.84.2-blue?logo=pixi)](https://pixi.sh)
 [![Ruff](https://img.shields.io/badge/Ruff-0.15.1-yellow?logo=ruff)](https://github.com/astral-sh/ruff)
 [![prek](https://img.shields.io/badge/prek-0.3.2-green?logo=git)](https://github.com/kawarabiyu/prek)
 
@@ -30,6 +30,17 @@ Kihara Lab EM server: https://em.kiharalab.org/algorithm/CryoZeta
   - Optimize CUDA memory allocation
   - Supported up to ~2,800 residues/nucleotides with ~2,000 support points.
     
+### Run this checkout with the Hugging Face Apptainer image
+
+From the repository root, mount the source at the package path already used by
+the image. Both Hugging Face launch scripts inherit these settings.
+Pass your downloaded image and assets paths to the launcher as usual.
+
+```bash
+export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:+${APPTAINER_BINDPATH},}$PWD/src:/app/CryoZeta/src:ro"
+bash /path/to/run_cryozeta.sh --sif /path/to/CryoZeta.sif --gpu 0 input.json output /path/to/assets
+```
+
 ## Setup
 
 Estimated time: < 15 minutes
@@ -45,20 +56,27 @@ Estimated time: < 15 minutes
 curl -fsSL https://pixi.sh/install.sh | bash
 ```
 
-Or visit https://pixi.sh/latest/#installation for other installation methods.
+Use Pixi 0.84.2 or newer for the v7 lockfile. For an existing user install,
+run `pixi self-update` and check `pixi --version` in the launcher shell. If a
+system Pixi takes precedence, add the updated binary to the front of `PATH`
+(e.g. `export PATH="$HOME/.pixi/bin:$PATH"`). See the
+[Pixi installation guide](https://pixi.sh/latest/#installation) for other methods.
 
 ### 2. Clone and set up the project
 
 ```bash
 git clone https://github.com/kiharalab/CryoZeta.git
 cd CryoZeta
-pixi run setup
+pixi run -e cu13 setup  # Blackwell with driver CUDA >= 13.2
 ```
 
-The setup command automatically:
+Select the environment for the GPU you will pass to the demo. For CUDA 12.8 use
+`pixi run -e default setup`. For CUDA 11.8 use `pixi run -e cu11 setup`.
+
+The setup command:
 
 1. Installs all dependencies (Python, CUDA, C++ libraries, etc.).
-2. Detects your GPU and selects the matching CUDA version (11, 12, or 13).
+2. Builds in the selected Pixi environment.
 3. Downloads CryoZeta assets (weights + examples) from Hugging Face.
 4. Clones and builds [TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus).
 
@@ -70,8 +88,7 @@ pixi run download-assets
 
 ### CUDA Environment Selection
 
-CryoZeta ships three CUDA environments. During setup and inference the correct
-one is **auto-detected** from two properties of your system:
+CryoZeta ships three CUDA environments. During demo inference the environment is **auto-detected** from two properties of your system:
 
 | Property | How it is read | What it controls |
 |----------|---------------|-----------------|
@@ -80,11 +97,39 @@ one is **auto-detected** from two properties of your system:
 
 The auto-detection logic combines both:
 
-| Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch |
-|---|---|---|---|---|
-| >= 10.0 (Blackwell) | >= 13 | `cu13` | 13.x | >= 2.7 |
-| >= 8.0 (Ampere / Ada / Hopper) | >= 12 | `default` (cu12) | 12.8 | >= 2.7 |
-| < 8.0 (Volta / Turing / older) | >= 11 | `cu11` | 11.8 | >= 2.0, < 2.5 |
+| Compute Capability | Driver CUDA | Selected Environment | CUDA Toolkit | PyTorch | Triton |
+|---|---|---|---|---|---|
+| >= 10.0 (Blackwell) | >= 13.2 | `cu13` | 13.2 | 2.15.0 | 3.9.0 |
+| >= 8.0 (Ampere / Ada / Hopper) | >= 12.8 | `default` (cu12) | 12.8 | 2.11.0 | 3.6.0 |
+| < 8.0 (Volta / Turing / older) | >= 11.8 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
+
+The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
+PyTorch scaled dot-product attention. Triangle attention still uses
+cuEquivariance when supported. In `cu11`, triangle attention, triangle
+multiplication and pair-biased transformer attention use the PyTorch paths.
+Triangle attention uses bounded PyTorch attention when cuEquivariance is
+ineligible or its kernel cannot run. The experimental streaming kernel is
+available as `cryozeta.kernels.triton_triangle.try_triangle` for direct
+benchmarks on SM80 and later with FP16 or BF16 inputs. Production inference
+keeps the PyTorch fallback, including on pre-Ampere GPUs in `cu11`.
+Older launchers can still pass
+`--use_deepspeed_evo_attention`; inference uses the native backend.
+
+The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
+during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
+Eligible large BF16 activations also fuse the cast after GroupNorm with SiLU.
+The activation kernel takes the element count at runtime so different map
+sizes share a compiled kernel. The Triton sources live in
+[`src/cryozeta/kernels`](src/cryozeta/kernels).
+
+The detector CLI's `--compile` option compiles the whole model with PyTorch.
+To compare output differences, first-call time, and warmed latency across batch
+sizes and window sizes with your checkpoint, run:
+
+```bash
+pixi run python scripts/profile_detection_compile.py assets/cryozeta-detection-v0.0.1.safetensors
+pixi run python scripts/profile_detection_compile.py assets/cryozeta-detection-v0.0.1.safetensors --whole-model
+```
 
 > **Tip:** Run `nvidia-smi` to see both the driver version and the maximum CUDA
 > version your driver supports. The "CUDA Version" shown by `nvidia-smi` is the
@@ -124,8 +169,8 @@ Available environments:
 | Environment | CUDA | Description |
 |-------------|------|-------------|
 | `default` | 12 | Default environment (CUDA 12.8) |
-| `cu11` | 11 | CUDA 11.8 with PyTorch < 2.5 |
-| `cu13` | 13 | CUDA 13.x for Blackwell GPUs |
+| `cu11` | 11 | CUDA 11.8 with PyTorch 2.7.1 |
+| `cu13` | 13 | CUDA 13.2 for Blackwell GPUs |
 | `dev` | 12 | Development (CUDA 12 + linting tools) |
 | `dev-cu11` | 11 | Development (CUDA 11 + linting tools) |
 | `dev-cu13` | 13 | Development (CUDA 13 + linting tools) |
@@ -151,24 +196,6 @@ See [Density-Support Mask Filtering](#density-support-mask-filtering) below.
 After setup, `inference_demo.sh`, `large_inference_demo.sh`, and the
 `cryozeta-*` entry points can be run both inside the CryoZeta repository root
 and from outside it.
-
-### Optional Runtime Cache Location
-
-CryoZeta compiles a small CUDA layer-normalization extension the first time it
-is needed. For normal user installs, no extra setup is required; PyTorch will
-use its default user-writable extension cache.
-
-For shared or read-only installations, such as centrally managed HPC/module
-installs, set `CRYOZETA_TORCH_EXTENSIONS_DIR` to a writable directory before
-running CryoZeta:
-
-```bash
-export CRYOZETA_TORCH_EXTENSIONS_DIR=/path/to/writable/cache
-bash /path/to/CryoZeta/inference_demo.sh
-```
-
-If your compiler reports `No space left on device` under `/tmp`, set `TMPDIR`
-to a writable scratch directory as well.
 
 ### Large Structure Inference
 
@@ -204,6 +231,17 @@ bash /path/to/CryoZeta/large_inference_demo.sh \
 
 With a budget of 600, the 9b0l example runs as two stages: protein + 3 DNA
 strands (558 residues) first, then the RNA strand (247 residues).
+
+The previous `--use_opm_tilelang` argument has been removed. OPM selects a
+PyTorch/cuBLAS implementation based on the workload and device. The
+workspace-reusing cuBLAS OPM route runs automatically for unmasked BF16
+inference with 1980 residues, a reduction length of 1980, and 128 hidden
+channels on the RTX A6000 with PyTorch `2.15.0+cu132`, CUDA BF16 autocast, and
+cuBLAS with BF16 reduced-precision reduction enabled. The final 12 rows and
+other configurations use the original OPM path. For this workload,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` is an optional allocator
+setting. In the 9BH4 comparison with the preceding reoriented OPM path it
+reduced peak reserved memory from 35.38 GiB to 26.11 GiB with identical exports.
 
 ### Prepare Input JSON
 
@@ -423,7 +461,6 @@ CryoZeta builds upon and is inspired by several excellent open-source projects:
 
 - **[Protenix](https://github.com/bytedance/Protenix)** (ByteDance) -- An open-source biomolecular structure prediction framework. CryoZeta's structure prediction pipeline is built upon Protenix.
 - **[OpenFold](https://github.com/aqlaboratory/openfold)** (Ahdritz et al.) -- An open-source protein structure prediction framework. CryoZeta reuses and adapts several OpenFold modules (e.g. layer normalization, tensor utilities). Our local copy is based on commit [`bb3f51`](https://github.com/aqlaboratory/openfold/commit/bb3f51e5a2cf2d5e3b709fe8f7d7a083c870222e).
-- **[CUTLASS](https://github.com/NVIDIA/cutlass)** (NVIDIA) -- CUDA Templates for Linear Algebra Subroutines and Solvers, used for DeepSpeed DS4Sci EvoformerAttention kernels.
 - **[TEASER++](https://github.com/MIT-SPARK/TEASER-plusplus)** (MIT SPARK Lab) -- A fast and certifiably robust point cloud registration library, used for superimposing predicted structures onto cryo-EM maps.
 - **[VESPER](https://github.com/kiharalab/VESPER_CUDA)** (Kihara Lab) -- A GPU-accelerated cryo-EM map comparison and fitting tool.
 

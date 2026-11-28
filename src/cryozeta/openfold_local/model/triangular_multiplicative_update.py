@@ -24,7 +24,7 @@ from cryozeta.openfold_local.model.primitives import LayerNorm, Linear
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
 from cryozeta.openfold_local.utils.tensor_utils import permute_final_dims
 
-cuequivariance_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+cuequivariance_is_installed = importlib.util.find_spec("cuequivariance_ops_torch") is not None
 if cuequivariance_is_installed:
     try:
         from cuequivariance_torch import triangle_multiplicative_update as _cueq_tri_mul
@@ -459,7 +459,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
-        if use_cuequivariance_multiplicative_update:
+        if use_cuequivariance_multiplicative_update and cuequivariance_is_installed:
             p_in_weight = torch.cat(
                 [self.linear_a_p.weight, self.linear_b_p.weight], dim=0
             )
