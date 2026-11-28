@@ -174,7 +174,7 @@ _OOM = re.compile(r"out of memory|OutOfMemoryError", re.I)
 def classify(*, exit_code: int | None, timed_out: bool, oom_killed: bool, err_texts: list[str],
              log_text: str, counters: list[dict], missing: list[str], nonfinite: list[str],
              gates_failed: list[str] | None = None, protocol: str = "P-CZ",
-             scope: list | None = None) -> tuple[str, str]:
+             scope: list | None = None, scope_detail: str | None = None) -> tuple[str, str]:
     """(outcome class, detail). Order: budget, host kill, strict-routing errors, OOM, crash,
     skips, routing policy, outputs, numerics. An ERR file fails the trial even when the CLI exits 0
     (``inference.main`` catches per-entry exceptions)."""
@@ -204,15 +204,19 @@ def classify(*, exit_code: int | None, timed_out: bool, oom_killed: bool, err_te
     if parsed["interp_skipped"] or parsed["output_skipped"]:
         return "SKIPPED", "pipeline skipped entries: " + ",".join(parsed["interp_skipped"] + parsed["output_skipped"])
     for c in counters:
-        if not c.get("route_allowed", True):
+        if not c.get("route_allowed", True) or (
+            c.get("in_replacement_scope") and c["served_backend"] != c["requested_backend"]
+        ):
             where = "requested replacement" if c.get("in_replacement_scope") else "frozen V0 policy"
             return "FALLBACK", f"{c['op']}@{c['call_site']} served {c['served_backend']} outside the {where}"
     if missing:
         return "CRASH", f"{len(missing)} expected outputs missing, first {missing[0]}"
     if nonfinite:
         return "NUMERICAL", f"NaN/Inf or unparseable: {nonfinite[0]}"
-    if scope and not any(c.get("in_replacement_scope") and c.get("count") for c in counters):
-        return "UNSUPPORTED", "replacement scope never executed (no in-scope call recorded)"
+    if scope_detail is None:
+        _, scope_detail = check_scope(scope or [], counters)
+    if scope_detail:
+        return "UNSUPPORTED", scope_detail
     if gates_failed:
         return "NUMERICAL", "gates failed: " + ",".join(gates_failed)
     return "SUCCESS", ""
@@ -277,14 +281,45 @@ def _first_line(text: str, needle: str) -> str:
     return ""
 
 
-def scope_coverage(variant_scope: list, counters: list[dict]):
-    """Fraction of in-scope calls served by the requested provider; 'N/A' for an empty scope."""
-    if not variant_scope:
-        return "N/A"
-    scoped = [c for c in counters if c.get("in_replacement_scope")]
-    total = sum(c["count"] for c in scoped)
-    ok = sum(c["count"] for c in scoped if c["served_backend"] == c["requested_backend"])
-    return ok / total if total else 0.0
+def check_scope(scope: list[dict], counters: list[dict], inputs=()) -> tuple[float | str, str]:
+    """Verify each declared site in one inference process or Mode B iteration."""
+    total = served = 0
+    missing = []
+    sizes = [i["n_token"] for i in inputs]
+    for rule in scope:
+        op, site, provider = rule["op"], rule["call_site"], rule["provider"]
+        floor = rule.get("min_tokens")
+        at_site = [c for c in counters if (c["op"], c["call_site"]) == (op, site) and c["count"] > 0]
+        scoped = []
+        seen_short = False
+        for c in at_site:
+            shape = c.get("first_shape") or []
+            below = floor is not None and len(shape) >= 3 and 0 < shape[-3] == shape[-2] < floor
+            if below and not c.get("in_replacement_scope") and c.get("route_allowed") and (
+                c["reason"] == "below_min_tokens" and c["requested_backend"] == c["served_backend"] in ("torch", "cueq")
+            ):
+                seen_short = True
+            elif c.get("in_replacement_scope") and c["requested_backend"] == provider and (
+                floor is None or (len(shape) >= 3 and shape[-3] == shape[-2] >= floor)
+            ):
+                scoped.append(c)
+            else:
+                missing.append(f"{op}@{site} (unexpected route or shape)")
+                break
+        ok = sum(c["count"] for c in scoped if c["served_backend"] == provider and c.get("route_allowed"))
+        served += ok
+        total += sum(c["count"] for c in scoped)
+        if not ok and (not seen_short or any(n >= floor for n in sizes)):
+            missing.append(f"{op}@{site} ({provider})")
+        elif floor is not None and any(n < floor for n in sizes) and not seen_short:
+            missing.append(f"{op}@{site} (below-floor baseline)")
+    if missing:
+        return 0.0, "invalid or missing replacement route evidence: " + ", ".join(missing)
+    return (served / total if total else "N/A"), ""
+
+
+def scope_coverage(variant_scope: list[dict], counters: list[dict]):
+    return check_scope(variant_scope, counters)[0]
 
 
 def rescue_counts(counters: list[dict]) -> dict:

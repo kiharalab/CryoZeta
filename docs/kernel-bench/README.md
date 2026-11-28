@@ -19,7 +19,7 @@ Status of each phase: [LEDGER.md](LEDGER.md). Results: [RESULTS.md](RESULTS.md).
 For long inputs, use `M-TCHUNK-mem-ES-TMV4A-OFF-NBM-X34` (X1–X4, LEDGER K24 and K28). Without it, routing is inert and CryoZeta runs as before.
 
 What it changes:
-- It runs FlashPairformer `fpf_trimul_v4` at the msa, empairformer and confidence trimul sites.
+- It runs FlashPairformer `fpf_trimul_v4` at the msa, empairformer and confidence trimul sites for stages with at least 101 tokens. Shorter stages, including single chains in cycle prediction, use the configured baseline TriMul. The counters record these calls as `below_min_tokens`.
 - It adds memory-only policies.
 - On the 24 GB card it moves the 9b0l synthetic limit from 1280 to 2304 tokens (RESULTS, "Capacity track").
 - End-to-end speed is unchanged within ±5 %.
@@ -157,7 +157,7 @@ Things `run_trial` does:
 - It refuses to start (exit 3) if the GPU is not idle.
 - It refuses (exit 2) a non-P-LC trial whose `--frozen-det` has no `freeze-det` manifest giving N_token and N_point for every entry: the requested cell must be checkable (amendment 1). It also refuses a tree whose hash differs from the manifest's `tree_sha256`, and an entry that sets `em_file` (that would bypass `--em_file_dir`).
 - It records the model input of every forward (`inputs`: N_token, P, valid points, `p`/`pz` shapes) and checks each run against the manifest (`cell`). A mismatch turns any outcome into INVALID_CELL; an unverified run blocks SUCCESS.
-- A strict variant whose replacement scope never executed is UNSUPPORTED, not SUCCESS.
+- Each inference process or Mode B iteration must record the requested provider at every declared eligible site. Missing evidence yields UNSUPPORTED and zero coverage. Below a declared token floor, the counters must show the baseline at that site.
 - `outcome` is the runtime class only. Accuracy gates are never evaluated here: use `compare_outputs` with sealed tolerances.
 - A trial is labelled `synthetic` when `--synthetic` is given, the entry name matches `*_synN_real|single`, or a `synthetic.json` sits in the parent of the entries directory (the `synth_inputs` layout).
 - A variant cannot set harness-controlled flags (seeds, paths, N_cycle, N_sample, N_step, workers, `p_dim`, which `build_configs` overwrites) or env (GPU selection, compile caches, and the instrumentation variables `CRYOZETA_KERNEL_COUNTERS`, `CRYOZETA_KERNEL_VARIANT`, `CRYOZETA_SYNC_STAGE_TIMER`, `CRYOZETA_STAGE_PEAKS`, `CRYOZETA_TRUNK_DUMP`). `sample_diffusion_chunk_size` ≠ 1 is refused unless the variant is `sample_paired: false`.
@@ -256,4 +256,4 @@ Outcome classes (`trial.json`):
 
 Allowed V0 rescues (cueq→DS4Sci TriAtt, cueq→torch APB) count as SUCCESS. They are reported in `baseline_rescues`.
 
-Provider coverage is N/A for an empty replacement scope (V0, M-*, L2-EX-*).
+Provider coverage is the lowest per-run fraction of eligible calls served by the requested provider. It is N/A when all runs have empty scope or contain only verified below-floor calls.

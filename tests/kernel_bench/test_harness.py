@@ -81,7 +81,30 @@ class Classify(unittest.TestCase):
     def test_scope_must_execute(self):
         scope = [{"op": "triatt", "call_site": "msa", "provider": "fpf_k2b"}]
         self.assertEqual(cls(scope=scope, counters=[ctr()]), "UNSUPPORTED")  # requested kernel never ran
-        self.assertEqual(cls(scope=scope, counters=[ctr(req="fpf_k2b", served="fpf_k2b", scope=True)]), "SUCCESS")
+        hit = ctr(site="msa", req="fpf_k2b", served="fpf_k2b", scope=True)
+        self.assertEqual(cls(scope=scope, counters=[hit]), "SUCCESS")
+        for bad in (dict(call_site="confidence"), dict(op="opm"), dict(count=0),
+                    dict(requested_backend="torch", served_backend="torch")):
+            self.assertEqual(cls(scope=scope, counters=[{**hit, **bad}]), "UNSUPPORTED")
+        for site in ("empairformer", "confidence"):
+            scope.append({**scope[0], "call_site": site})
+        self.assertEqual(cls(scope=scope, counters=[hit]), "UNSUPPORTED")
+        self.assertEqual(C.scope_coverage(scope, [hit]), 0.0)
+        self.assertEqual(cls(scope=scope, counters=[{**hit, "call_site": r["call_site"]} for r in scope]), "SUCCESS")
+
+    def test_short_trimul_scope(self):
+        scope = [{"op": "trimul", "call_site": "msa", "provider": "fpf_trimul_v4", "min_tokens": 101}]
+        short = dict(ctr(op="trimul", site="msa", reason="below_min_tokens"), first_shape=[1, 63, 63, 128])
+        long = ctr(op="trimul", site="msa", req="fpf_trimul_v4", served="fpf_trimul_v4", scope=True)
+        long["first_shape"] = [1, 101, 101, 128]
+        inputs = [{"n_token": 63}, {"n_token": 101}]
+        self.assertEqual(C.check_scope(scope, [short], inputs[:1]), ("N/A", ""))
+        self.assertEqual(C.check_scope(scope, [short, long], inputs), (1.0, ""))
+        self.assertTrue(C.check_scope(scope, [short], inputs)[1])
+        self.assertTrue(C.check_scope(scope, [long], inputs)[1])
+        self.assertTrue(C.check_scope(scope, [long, {**long, "in_replacement_scope": False}], inputs[1:])[1])
+        for bad in (dict(reason="served"), dict(first_shape=[1, 101, 101, 128]), dict(count=0)):
+            self.assertTrue(C.check_scope(scope, [{**short, **bad}], inputs[:1])[1])
 
     def test_unparseable_output(self):
         with tempfile.TemporaryDirectory() as d:
@@ -95,7 +118,7 @@ class Classify(unittest.TestCase):
     def test_scope_coverage(self):
         self.assertEqual(C.scope_coverage([], [ctr()]), "N/A")
         cs = [ctr(req="fpf_k2b", served="fpf_k2b", scope=True, n=3), ctr(req="fpf_k2b", served="cueq", scope=True)]
-        self.assertEqual(C.scope_coverage([["triatt", "empairformer", "fpf_k2b"]], cs), 0.75)
+        self.assertEqual(C.scope_coverage([{"op": "triatt", "call_site": "empairformer", "provider": "fpf_k2b"}], cs), 0.75)
 
 
 class Inputs(unittest.TestCase):

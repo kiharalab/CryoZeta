@@ -588,15 +588,21 @@ def main(argv=None):
             produced += ok
     errs = [open(p, errors="replace").read() for p in C.err_files(dump)]
     det_after = C.sha256_tree(a.frozen_det) if a.frozen_det else None
+    model_runs = (rec["mode_b"]["iterations"] if "mode_b" in rec else
+                  [s["counters"] or {} for s in rec["steps"] if s["step"].startswith("inference")
+                   or s["step"] == "cycle_predict"])
+    checks = [C.check_scope(variant["replace"], r.get("counters") or [], r.get("inputs") or [])
+              for r in model_runs or [{}]]
+    scope_detail = next((f"run {i}: {why}" for i, (_, why) in enumerate(checks) if why), "")
+    coverage = min((frac for frac, _ in checks if frac != "N/A"), default="N/A")
     cls, detail = C.classify(exit_code=last_code, timed_out=timed_out, oom_killed=oom_killed, err_texts=errs,
                              log_text=log_text, counters=counters, missing=missing,
-                             nonfinite=C.scan_nonfinite(produced), protocol=a.protocol, scope=variant["replace"])
+                             nonfinite=C.scan_nonfinite(produced), protocol=a.protocol, scope_detail=scope_detail)
     if det_after != det_before:
         cls, detail = "CRASH", "frozen detection tree modified during the trial"
     cell = {"expected": expected, "inputs": inputs, "status": "n/a (P-LC)", "detail": ""}
     if a.protocol != "P-LC":
-        runs = ([it.get("inputs") or [] for it in rec["mode_b"]["iterations"]] if "mode_b" in rec else
-                [(s["counters"] or {}).get("inputs", []) for s in rec["steps"] if s["step"].startswith("inference")])
+        runs = [r.get("inputs") or [] for r in model_runs]
         cell["status"], cell["detail"] = C.check_runs(expected, runs)
         cell["outcome_before_check"] = [cls, detail]
         cls, detail = C.cell_outcome(cls, detail, cell["status"], cell["detail"])
@@ -607,7 +613,7 @@ def main(argv=None):
         "err_sha256": hashlib.sha256("\n".join(errs).encode()).hexdigest() if errs else None,
         "err_files": C.err_files(dump), "missing_outputs": missing[:50], "n_missing": len(missing),
         "frozen_det_sha256_after": det_after, "log": parsed, "cell": cell,
-        "scope_coverage": C.scope_coverage(variant["replace"], counters),
+        "scope_coverage": coverage,
         "baseline_rescues": C.rescue_counts(counters),
         "M3_nvml_peak_mib": nvml_peak(os.path.join(out, "nvml.csv")),
         "M4_max_rss_kib": max([s["time_v"].get("max_rss_kib", 0) for s in rec["steps"]] or [0]) or None,

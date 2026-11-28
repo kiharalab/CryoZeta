@@ -100,6 +100,9 @@ class Routing(State):
     def test_load_variant(self):
         bad = ["policy_id: V0", "variant_id: x\nfoo: 1", "variant_id: x\nclear_cache: sometimes",
                "variant_id: x\nstrict: 'yes'",
+               "variant_id: x\nreplace: [{op: trimul, call_site: msa, provider: fpf_trimul_v4, min_tokens: 0}]",
+               "variant_id: x\nreplace: [{op: triatt, call_site: msa, provider: cueq, min_tokens: 101}]",
+               "variant_id: x\nreplace: [{op: trimul, call_site: msa, provider: fpf_trimul_v4, min_token: 101}]",
                "variant_id: x\nreplace: [{op: triatt, call_site: msa, provider: tilelang}]",
                "variant_id: x\nreplace: [{op: triatt, call_site: nowhere, provider: torch}]",
                "variant_id: x\nreplace: [{op: opm, call_site: msa, provider: einsum},"
@@ -383,6 +386,28 @@ class FpfAdapters(State):
             kr.VARIANT = kr.Variant(strict=True, replace={("triatt", "other"): "fpf_k2b"})
             with self.subTest(starting=starting):
                 torch.testing.assert_close(m(x, mask), ref)
+
+    @needs_docs
+    @torch.no_grad()
+    def test_x34_short_stage_uses_baseline(self):
+        path = os.path.join(VARIANTS, "M-TCHUNK-mem-ES-TMV4A-OFF-NBM-X34.yaml")
+        variant = kr.load_variant(path)
+        m = randomized(TriangleMultiplicationOutgoing(c_z=16, c_hidden=8)).float()
+        for site, n in (("msa", 63), ("empairformer", 94), ("confidence", 100)):
+            z = torch.randn(1, n, n, 16)
+            kr.VARIANT = kr.Variant()
+            ref = m(z.clone())
+            kr.VARIANT = variant
+            with self.subTest(site=site, n=n):
+                got = kr.run_block(site, False, m, z.clone())
+                torch.testing.assert_close(got, ref, rtol=0, atol=0)
+                c, = [c for c in self.counters() if c["call_site"] == site]
+                self.assertEqual((c["requested_backend"], c["served_backend"], c["reason"]),
+                                 ("torch", "torch", "below_min_tokens"))
+                self.assertTrue(c["route_allowed"])
+                self.assertFalse(c["in_replacement_scope"])
+        with self.assertRaises(kr.KernelUnsupported):  # at the floor, CPU must still refuse FPF
+            kr.run_block("confidence", False, m, torch.randn(1, 101, 101, 16))
 
     def test_cpu_refusals(self):
         """The real FPF support checks refuse CPU tensors; strict scope turns that into UNSUPPORTED."""

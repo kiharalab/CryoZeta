@@ -59,6 +59,7 @@ class Variant:
     description: str = ""
     strict: bool = False
     replace: dict = field(default_factory=dict)  # (op, call_site) -> provider
+    min_tokens: dict = field(default_factory=dict)  # TriMul replacement floors by (op, call_site)
     clear_cache: str = "legacy"
     cli_args: list = field(default_factory=list)
     env: dict = field(default_factory=dict)
@@ -80,7 +81,10 @@ def load_variant(path: str | None) -> Variant:
     if "variant_id" not in raw:
         raise ValueError(f"{path}: variant_id is required")
     replace = {}
+    min_tokens = {}
     for r in raw.get("replace") or []:
+        if not isinstance(r, dict) or set(r) - {"op", "call_site", "provider", "min_tokens"}:
+            raise ValueError(f"{path}: invalid replacement rule {r!r}")
         op, site, prov = r.get("op"), r.get("call_site"), r.get("provider")
         if op not in OPS:
             raise ValueError(f"{path}: unknown op {op!r}")
@@ -91,6 +95,11 @@ def load_variant(path: str | None) -> Variant:
         if (op, site) in replace:
             raise ValueError(f"{path}: duplicate replacement ({op}, {site})")
         replace[(op, site)] = prov
+        if "min_tokens" in r:
+            floor = r["min_tokens"]
+            if op != "trimul" or type(floor) is not int or floor < 1:
+                raise ValueError(f"{path}: min_tokens requires a positive integer on a trimul rule")
+            min_tokens[(op, site)] = floor
     clear = raw.get("clear_cache", "legacy")
     if clear not in CLEAR_POLICIES:
         raise ValueError(f"{path}: clear_cache must be one of {sorted(CLEAR_POLICIES)}")
@@ -113,6 +122,7 @@ def load_variant(path: str | None) -> Variant:
         description=str(raw.get("description", "")),
         strict=raw.get("strict", False),
         replace=replace,
+        min_tokens=min_tokens,
         clear_cache=clear,
         cli_args=cli_args,
         env=env,
@@ -191,8 +201,13 @@ def op(name: str, v0: str, x: torch.Tensor):
         yield None
         return
     site = _SITE.get()
-    req = VARIANT.replace.get((name, site))
+    key = (name, site)
+    floor = VARIANT.min_tokens.get(key)
+    below_floor = floor is not None and x.shape[-2] < floor
+    req = None if below_floor else VARIANT.replace.get(key)
     c = _Call(name, site, req or v0, v0, req is not None, list(x.shape), str(x.dtype).replace("torch.", ""))
+    if below_floor:
+        c.reasons.add("below_min_tokens")
     tok = _CALL.set(c)
     try:
         yield c
@@ -335,7 +350,9 @@ def snapshot() -> dict:
         "strict": VARIANT.strict,
         "clear_cache": VARIANT.clear_cache,
         "replacement_scope": [
-            {"op": o, "call_site": s, "provider": p} for (o, s), p in sorted(VARIANT.replace.items())
+            {"op": o, "call_site": s, "provider": p,
+             **({"min_tokens": VARIANT.min_tokens[o, s]} if (o, s) in VARIANT.min_tokens else {})}
+            for (o, s), p in sorted(VARIANT.replace.items())
         ],
         "counters": [
             {
