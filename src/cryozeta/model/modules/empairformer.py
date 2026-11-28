@@ -551,9 +551,7 @@ class MSABlock(nn.Module):
                 [...,n_token, n_token, c_z]
         """
         # Communication
-        z = z + self.outer_product_mean_msa(
-            m, inplace_safe=inplace_safe, chunk_size=chunk_size
-        )
+        z = z + self.outer_product_mean_msa(m)
         if not self.is_last_block:
             # MSA stack
             m = self.msa_stack(m, z)
@@ -1092,9 +1090,7 @@ class EMPairformerBlock(nn.Module):
         )
         z = add(
             z,
-            self.outer_row_product_mean(
-                pz, mask=None, chunk_size=chunk_size, inplace_safe=inplace_safe
-            ),
+            self.outer_row_product_mean(pz),
             inplace=inplace_safe,
         )
 
@@ -1104,9 +1100,7 @@ class EMPairformerBlock(nn.Module):
         pz = pz.transpose(-2, -3)
         p = add(
             p,
-            self.outter_column_product_mean(
-                pz, mask=None, chunk_size=chunk_size, inplace_safe=inplace_safe
-            ),
+            self.outter_column_product_mean(pz),
             inplace=inplace_safe,
         )
         pz = pz.transpose(-2, -3)

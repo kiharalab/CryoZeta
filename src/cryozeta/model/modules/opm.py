@@ -87,10 +87,14 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
     if _use_reoriented_opm(a, b, weight, bias, norm, chunk_size):
         return _opm_reoriented(a, b, weight, bias, norm)
 
-    is_3d = False
-    if a.dim() == 3:
-        is_3d = True
+    batch_shape = a.shape[:-3]
+    if a.ndim == 3:
         a, b, norm = a.unsqueeze(0), b.unsqueeze(0), norm.unsqueeze(0)
+    elif a.ndim > 4:
+        n = a.shape[-3]
+        a, b = a.flatten(0, -4), b.flatten(0, -4)
+        if norm.ndim > 2:
+            norm = norm.expand(*batch_shape, n, n).flatten(0, -3)
 
     B, N, _, H = a.shape
     Z = weight.shape[0]
@@ -143,6 +147,4 @@ def opm_chunked(a, b, weight, bias, norm, chunk_size=16):
     # Normalize after all chunks (matches native _opm path exactly)
     out /= norm.unsqueeze(-1)
 
-    if is_3d:
-        out = out.squeeze(0)
-    return out
+    return out.reshape(*batch_shape, N, N, Z)

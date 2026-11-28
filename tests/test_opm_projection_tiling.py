@@ -50,6 +50,24 @@ def test_tiled_projection_matches_untiled_bitwise():
     assert a.is_contiguous() and b.is_contiguous()
 
 
+@pytest.mark.parametrize("masked", [False, True])
+def test_opm_multiple_batch_dimensions_match_flat_batch_and_gradients(masked):
+    torch.manual_seed(2)
+    opm = OuterProductMean(4, 3, 2).double()
+    with torch.no_grad():
+        opm.linear_out.weight.normal_()
+        opm.linear_out.bias.normal_()
+    m = torch.randn(2, 3, 7, 17, 4, dtype=torch.float64, requires_grad=True)
+    mask = torch.randint(0, 2, m.shape[:-1], dtype=m.dtype) if masked else None
+    actual = opm(m, mask)
+    expected = opm(m.flatten(0, 1), None if mask is None else mask.flatten(0, 1))
+    assert actual.shape == (2, 3, 17, 17, 3)
+    assert torch.equal(actual.flatten(0, 1), expected)
+    actual_grad = torch.autograd.grad(actual.square().sum(), m)[0]
+    expected_grad = torch.autograd.grad(expected.square().sum(), m)[0]
+    assert torch.equal(actual_grad, expected_grad)
+
+
 # ---------------- forward-gate routing ----------------
 
 
