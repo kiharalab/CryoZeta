@@ -6,6 +6,36 @@ import torch
 import triton
 import triton.language as tl
 from triton.errors import TritonError
+from triton.language.extra.cuda import libdevice
+
+
+@triton.jit
+def _score_tile(
+    q,
+    K,
+    MASK,
+    BIAS,
+    i,
+    kpos,
+    c,
+    N: tl.constexpr,
+    ks2: tl.constexpr,
+    ms3: tl.constexpr,
+    bs2: tl.constexpr,
+    bs3: tl.constexpr,
+):
+    k = tl.load(K + kpos[:, None] * ks2 + c[None, :], kpos[:, None] < N, 0)
+    bias = tl.load(
+        BIAS + i[:, None] * bs2 + kpos[None, :] * bs3,
+        (i[:, None] < N) & (kpos[None, :] < N),
+        0,
+    )
+    mask = tl.load(MASK + kpos * ms3, kpos < N, 0)
+    # Match the rounding boundaries of matmul and the sequential bias adds.
+    score = tl.dot(q, tl.trans(k)).to(q.dtype)
+    score = (score + mask[None, :]).to(q.dtype)
+    score = (score + bias).to(q.dtype).to(tl.float32)
+    return tl.where(kpos[None, :] < N, score, -float("inf"))
 
 
 @triton.jit
@@ -45,52 +75,40 @@ def _triangle(
     q = tl.load(
         Q + row * qs0 + head * qs1 + i[:, None] * qs2 + c[None, :], i[:, None] < N, 0
     )
-    # Maintain an online softmax for each query while streaming key tiles.
+    key = K + row * ks0 + head * ks1
+    mask = MASK + row * ms0
+    bias = BIAS + row * bs0 + head * bs1
+    # Compute the softmax statistics without storing the attention matrix.
     running_max = tl.full((BM,), -float("inf"), tl.float32)
     normalizer = tl.full((BM,), 0.0, tl.float32)
+    for tile in range(tl.cdiv(N, BN)):
+        kpos = tile * BN + j
+        score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
+        maximum = tl.maximum(running_max, tl.max(score, 1))
+        # An entirely masked first tile contributes zero until a finite key arrives.
+        shift = tl.where(maximum == -float("inf"), 0.0, maximum)
+        alpha = libdevice.exp(running_max - shift)
+        prob = libdevice.exp(score - shift[:, None])
+        normalizer = normalizer * alpha + tl.sum(prob, 1)
+        running_max = maximum
+
+    # PyTorch rounds normalized probabilities before multiplying by V.
     acc = tl.full((BM, D), 0.0, tl.float32)
     for tile in range(tl.cdiv(N, BN)):
         kpos = tile * BN + j
-        k = tl.load(
-            K + row * ks0 + head * ks1 + kpos[:, None] * ks2 + c[None, :],
-            kpos[:, None] < N,
-            0,
-        )
+        score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
         v = tl.load(
             V + row * vs0 + head * vs1 + kpos[:, None] * vs2 + c[None, :],
             kpos[:, None] < N,
             0,
         )
-        bias = tl.load(
-            BIAS + row * bs0 + head * bs1 + i[:, None] * bs2 + kpos[None, :] * bs3,
-            (i[:, None] < N) & (kpos[None, :] < N),
-            0,
+        prob = tl.div_rn(
+            libdevice.exp(score - running_max[:, None]), normalizer[:, None]
         )
-        mask = tl.load(MASK + row * ms0 + kpos * ms3, kpos < N, 0)
-        score = tl.dot(q, tl.trans(k)).to(q.dtype)
-        score = (score + mask[None, :]).to(q.dtype)
-        score = (score + bias).to(q.dtype).to(tl.float32)
-        score = tl.where(kpos[None, :] < N, score, -float("inf"))
-        maximum = tl.maximum(running_max, tl.max(score, 1))
-        # An entirely masked first tile contributes zero until a finite key arrives.
-        shift = tl.where(maximum == -float("inf"), 0.0, maximum)
-        alpha = tl.exp(running_max - shift)
-        prob = tl.exp(score - shift[:, None])
-        normalizer = normalizer * alpha + tl.sum(prob, 1)
-        acc = acc * alpha[:, None] + tl.dot(prob.to(v.dtype), v)
-        running_max = maximum
-    output = acc / normalizer[:, None]
-    if V.dtype.element_ty == tl.float16:
-        # Rounding the tensor-core weights can move a finite weighted mean
-        # just outside the FP16 range before the final cast.
-        output = tl.where(
-            tl.abs(output) < float("inf"),
-            tl.minimum(tl.maximum(output, -65504.0), 65504.0),
-            output,
-        )
+        acc = tl.dot(prob.to(v.dtype), v, acc)
     tl.store(
         OUT + ((row * H + head) * N + i[:, None]) * D + c[None, :],
-        output,
+        acc,
         i[:, None] < N,
     )
 
@@ -155,9 +173,10 @@ def try_triangle(q, k, v, biases):
     mask = mask.expand(rows, 1, 1, length)
     bias = bias.expand(rows, heads, length, length)
     out = torch.empty(q.shape, device=q.device, dtype=q.dtype)
+    block_query, block_key = (16, 128) if (length, width) == (1980, 32) else (32, 32)
     try:
         with torch.cuda.device(q.device):
-            _triangle[(triton.cdiv(length, 32), rows, heads)](
+            _triangle[(triton.cdiv(length, block_query), rows, heads)](
                 q,
                 k,
                 v,
@@ -173,8 +192,9 @@ def try_triangle(q, k, v, biases):
                 mask.stride(0),
                 mask.stride(3),
                 *bias.stride(),
-                32,
-                32,
+                block_query,
+                block_key,
+                enable_fp_fusion=True,
             )
     except (TritonError, FileNotFoundError, RuntimeError) as exc:
         if (
