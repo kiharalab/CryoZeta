@@ -66,6 +66,7 @@ def _triangle(
     bs3: tl.constexpr,
     BM: tl.constexpr,
     BN: tl.constexpr,
+    REUSE_RECIPROCAL: tl.constexpr,
 ):
     i = tl.program_id(0) * BM + tl.arange(0, BM)
     row = tl.program_id(1).to(tl.int64)
@@ -92,6 +93,8 @@ def _triangle(
         normalizer = normalizer * alpha + tl.sum(prob, 1)
         running_max = maximum
 
+    if REUSE_RECIPROCAL:
+        inverse = tl.div_rn(1.0, normalizer)
     # PyTorch rounds normalized probabilities before multiplying by V.
     acc = tl.full((BM, D), 0.0, tl.float32)
     for tile in range(tl.cdiv(N, BN)):
@@ -102,9 +105,14 @@ def _triangle(
             kpos[:, None] < N,
             0,
         )
-        prob = tl.div_rn(
-            libdevice.exp(score - running_max[:, None]), normalizer[:, None]
-        )
+        numerator = libdevice.exp(score - running_max[:, None])
+        if REUSE_RECIPROCAL:
+            # Correct the reciprocal product before rounding to the value dtype.
+            prob = numerator * inverse[:, None]
+            residual = tl.fma(-prob, normalizer[:, None], numerator)
+            prob = tl.fma(residual, inverse[:, None], prob)
+        else:
+            prob = tl.div_rn(numerator, normalizer[:, None])
         acc = tl.dot(prob.to(v.dtype), v, acc)
     tl.store(
         OUT + ((row * H + head) * N + i[:, None]) * D + c[None, :],
@@ -138,7 +146,8 @@ def try_triangle(q, k, v, biases):
         and width in (16, 32, 64)
     ):
         return None
-    if torch.cuda.get_device_capability(q.device)[0] < 8:
+    capability = torch.cuda.get_device_capability(q.device)
+    if capability[0] < 8:
         return None
     if any(
         t.dtype != q.dtype or t.device != q.device or t.stride(-1) != 1
@@ -170,10 +179,25 @@ def try_triangle(q, k, v, biases):
             >= 2**31
         ):
             return None
-    mask = mask.expand(rows, 1, 1, length)
-    bias = bias.expand(rows, heads, length, length)
     out = torch.empty(q.shape, device=q.device, dtype=q.dtype)
     block_query, block_key = (16, 128) if (length, width) == (1980, 32) else (32, 32)
+    num_warps = 4
+    # This tile and reciprocal update were qualified on the large A6000 workload.
+    reuse_reciprocal = (
+        capability == (8, 6)
+        and q.dtype == torch.bfloat16
+        and (heads, length, width) == (4, 1980, 32)
+        and rows >= 64
+        and triton.__version__ == "3.9.0"
+        and torch.cuda.get_device_name(q.device) == "NVIDIA RTX A6000"
+    )
+    if reuse_reciprocal:
+        block_query, block_key, num_warps = 64, 128, 8
+        # Pack the shared bias before broadcasting so only one copy is allocated.
+        if bias.shape[0] == 1 and bias.stride(1) == 1 and bias.stride(-1) == heads:
+            bias = bias.contiguous()
+    mask = mask.expand(rows, 1, 1, length)
+    bias = bias.expand(rows, heads, length, length)
     try:
         with torch.cuda.device(q.device):
             _triangle[(triton.cdiv(length, block_query), rows, heads)](
@@ -194,6 +218,8 @@ def try_triangle(q, k, v, biases):
                 *bias.stride(),
                 block_query,
                 block_key,
+                reuse_reciprocal,
+                num_warps=num_warps,
                 enable_fp_fusion=True,
             )
     except (TritonError, FileNotFoundError, RuntimeError) as exc:
