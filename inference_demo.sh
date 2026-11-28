@@ -33,6 +33,11 @@ Options:
   --checkpoint PATH   CryoZeta checkpoint path.
   --interp-checkpoint PATH
                       CryoZeta-Interpolate checkpoint path.
+  --mask-filter       Filter predicted structures with a density-support mask:
+                      voxels at the author-recommended contour level are
+                      Gaussian-blurred and re-thresholded (Li) to build the
+                      mask; predicted residues outside it are removed from
+                      the output structures.
   --overwrite         Re-run even if outputs already exist.
   -h, --help          Show this help message and exit.
 
@@ -113,6 +118,7 @@ cli_mode=""
 cli_checkpoint=""
 cli_interp_checkpoint=""
 cli_overwrite="false"
+cli_mask_filter="false"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -139,6 +145,8 @@ while [ $# -gt 0 ]; do
             cli_interp_checkpoint="$2"; shift 2 ;;
         --overwrite)
             cli_overwrite="true"; shift ;;
+        --mask-filter)
+            cli_mask_filter="true"; shift ;;
         -h|--help)
             usage; exit 0 ;;
         *)
@@ -194,6 +202,7 @@ use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 mode="${cli_mode:-combined}"  # cryozeta, cryozeta-interpolate, or combined
 overwrite="${cli_overwrite}"
+use_mask_filter="${cli_mask_filter}"
 checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
 checkpoint_interpolation_path="${cli_interp_checkpoint:-${ASSETS_DIR}/cryozeta-interpolate-v0.0.1.safetensors}"
 detection_checkpoint_path="${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors"
@@ -270,6 +279,7 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --sample_diffusion.N_step "${N_step}" \
     --data.num_dl_workers 1 \
     --use_interpolation false \
+    --use_mask_filter "${use_mask_filter}" \
     --overwrite "${overwrite}"
 fi
 
@@ -291,6 +301,7 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --sample_diffusion.N_step "${N_step}" \
     --data.num_dl_workers 1 \
     --use_interpolation true \
+    --use_mask_filter "${use_mask_filter}" \
     --overwrite "${overwrite}"
 fi
 

@@ -3,16 +3,19 @@
 Cycle/staged inference orchestrator with EM-point filtering between stages.
 
 This script runs multiple inference stages sequentially. For each stage:
-  1) It auto-generates stage JSONs from chains in base_json (sorted by length, descending).
+  1) It auto-generates a stage JSON from one or more chains in base_json.
   2) It builds configs like runner/inference.py and calls its main(configs).
   3) It loads the predicted structure and removes EM points near predicted CA atoms.
   4) It writes a new EM .pt and uses it for the next stage.
 
 The pipeline automatically:
   - Extracts all chains from base_json sequences
-  - Expands chains by their "count" value (e.g., count=2 becomes 2 separate stages)
+  - Expands chains by their "count" value (e.g., count=2 becomes 2 chain copies)
   - Sorts all chain copies by sequence length (longest first)
-  - Creates one stage per chain copy (stage names: <base_name>_stage_1, _stage_2, ...)
+  - Packs chain copies into stages of at most --max_residues_per_stage residues:
+    each pass over the entities takes at most one unused copy per entity, so a
+    single step can model several chains from distinct entities together
+    (stage names: <base_name>_stage_1, _stage_2, ...)
   - Stores intermediate EM files in <dump_root>/em/
   - Stores all AtomArray NPZ files in <dump_root>/atom_arrays/ (flat structure)
 
@@ -38,11 +41,12 @@ For example, if base_json has:
   - Chain A with count=2, length=600
   - Chain B with count=2, length=280
 
-The pipeline will create 4 stages (sorted by length):
-  - stage_1: Chain A (copy 1)
-  - stage_2: Chain A (copy 2)
-  - stage_3: Chain B (copy 1)
-  - stage_4: Chain B (copy 2)
+With a per-stage budget of 900 residues the pipeline packs copies round-robin
+across entities and creates 2 stages:
+  - stage_1: Chain A (copy 1) + Chain B (copy 1)
+  - stage_2: Chain A (copy 2) + Chain B (copy 2)
+
+With the default budget (2800) all 4 copies fit into a single stage.
 
 Example:
   uv run cryozeta-cycle-predict \
@@ -201,19 +205,80 @@ def extract_chains_sorted_by_length(base_json: Path) -> list[tuple[int, int, dic
     ]
 
 
+def pack_chains_into_stages(
+    chains: list[tuple[int, int, dict]],
+    max_residues_per_stage: int,
+) -> list[list[tuple[int, int, dict]]]:
+    """
+    Pack chain copies into stages of at most max_residues_per_stage residues.
+
+    Chains must come from extract_chains_sorted_by_length (sorted by length
+    descending, copies expanded). Packing is round-robin across entities: each
+    pass takes at most one unused copy per entity, so a stage spans as many
+    distinct entities as possible. After a full pass adds nothing, the stage is
+    closed. A chain longer than the budget still gets its own stage.
+
+    Returns a list of stages, each a list of (seq_idx, copy_idx, seq_entry).
+    """
+    # Group copies by their original entity, keeping the length-descending
+    # entity order from extract_chains_sorted_by_length.
+    entity_order: list[int] = []
+    copies_by_entity: dict[int, list[tuple[int, int, dict]]] = {}
+    for chain in chains:
+        seq_idx = chain[0]
+        if seq_idx not in copies_by_entity:
+            copies_by_entity[seq_idx] = []
+            entity_order.append(seq_idx)
+        copies_by_entity[seq_idx].append(chain)
+
+    stages: list[list[tuple[int, int, dict]]] = []
+    while any(copies_by_entity.values()):
+        stage: list[tuple[int, int, dict]] = []
+        stage_residues = 0
+
+        # Round-robin passes; stop when a full pass adds nothing.
+        while True:
+            took_chain = False
+            for seq_idx in entity_order:
+                queue = copies_by_entity[seq_idx]
+                if not queue:
+                    continue
+                length = get_sequence_length(queue[0][2])
+                if stage_residues + length > max_residues_per_stage:
+                    continue
+                stage.append(queue.pop(0))
+                stage_residues += length
+                took_chain = True
+            if not took_chain:
+                break
+
+        if stage:
+            stages.append(stage)
+            continue
+
+        # Nothing fits in an empty stage: every remaining chain exceeds the
+        # budget. Give the longest remaining chain a stage of its own.
+        for seq_idx in entity_order:
+            if copies_by_entity[seq_idx]:
+                stages.append([copies_by_entity[seq_idx].pop(0)])
+                break
+
+    return stages
+
+
 def generate_stage_json(
     *,
     base_json: Path,
-    seq_entry: dict,
+    seq_entries: list[dict],
     stage_index: int,
     out_dir: Path,
     em_pt: Path,
 ) -> tuple[Path, str]:
     """
-    Generate a stage JSON with a single chain (count=1).
+    Generate a stage JSON with one or more chains (each with count=1).
     Returns (json_path, stage_name).
 
-    Note: seq_entry should already have count=1 (via make_single_copy_entry).
+    Note: each seq_entry should already have count=1 (via make_single_copy_entry).
     """
     entry = read_base_json(base_json)
     base_name = entry.get("name", "unnamed")
@@ -224,7 +289,7 @@ def generate_stage_json(
         "em_file": str(em_pt.resolve()),
         "modelSeeds": entry.get("modelSeeds", []),
         "assembly_id": entry.get("assembly_id", "1"),
-        "sequences": [seq_entry],
+        "sequences": list(seq_entries),
     }
 
     for key in ("map_path", "resolution", "contour_level"):
@@ -461,16 +526,28 @@ def compare_registration_methods(
         metrics["best_recall"] = recall
         return "svd", svd_path, metrics
 
-    # Auto mode: compare both methods
-    if not teaser_path.is_file():
-        logger.error(f"TEASER++ NPZ file not found: {teaser_path}")
-        sys.exit(1)
-
+    # Auto mode: compare both methods. A method may legitimately produce no
+    # NPZ (e.g. TEASER++ finds too few correspondences on RNA-only stages),
+    # so fall back to whichever registration succeeded.
+    teaser_exists = teaser_path.is_file()
     svd_exists = svd_path.is_file()
-    if not svd_exists:
-        logger.warning(
-            f"SVD NPZ not found: {svd_path} (using TEASER++ only)"
+    if not teaser_exists and not svd_exists:
+        logger.error(
+            f"Neither TEASER++ nor SVD NPZ found: {teaser_path}, {svd_path}"
         )
+        sys.exit(1)
+    if not teaser_exists:
+        logger.warning(
+            f"TEASER++ NPZ not found: {teaser_path} (using SVD only)"
+        )
+        svd_recall = _score_npz(svd_path, support_points, distance_threshold)
+        metrics["teaser_query_recall"] = None
+        metrics["svd_query_recall"] = svd_recall
+        metrics["best_method"] = "svd"
+        metrics["best_recall"] = svd_recall
+        return "svd", svd_path, metrics
+    if not svd_exists:
+        logger.warning(f"SVD NPZ not found: {svd_path} (using TEASER++ only)")
 
     best_method = "teaser"
     best_path = teaser_path
@@ -586,6 +663,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sample.N_sample", dest="sample_N_sample", type=int, default=2)
     p.add_argument("--sample.N_step", dest="sample_N_step", type=int, default=20)
     p.add_argument("--model.N_cycle", dest="model_N_cycle", type=int, default=10)
+    p.add_argument(
+        "--max_residues_per_stage",
+        dest="max_residues_per_stage",
+        type=int,
+        default=2800,
+        help=(
+            "Maximum total polymer residues per stage. Chains are packed "
+            "round-robin across entities; a chain longer than this budget "
+            "still gets its own stage."
+        ),
+    )
     p.add_argument("--use_deepspeed_evo_attention", default="true")
     p.add_argument("--use_cuequivariance_attention", default="true")
     p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
@@ -721,24 +809,39 @@ def main() -> None:
     # Extract chains sorted by length (longest first), expanded by count
     chains = extract_chains_sorted_by_length(base_json)
     total_chains = len(chains)
+    max_residues = int(args.max_residues_per_stage)
+    stages = pack_chains_into_stages(chains, max_residues)
+    total_stages = len(stages)
     logger.info(
         f"Found {total_chains} chain copies (expanded by count), sorted by sequence length (descending)"
+    )
+    logger.info(
+        f"Packed into {total_stages} stages with at most {max_residues} residues each"
     )
 
     # Track stage names and NPZ paths for combine_stages
     stage_names: list[str] = []
     stage_npz_paths: list[Path | None] = []
 
-    for stage_idx, (seq_idx, copy_idx, seq_entry) in enumerate(chains, start=1):
-        seq_len = get_sequence_length(seq_entry)
+    for stage_idx, stage_chains in enumerate(stages, start=1):
+        stage_lengths = [
+            get_sequence_length(seq_entry) for _, _, seq_entry in stage_chains
+        ]
+        chain_desc = ", ".join(
+            f"seq={seq_idx} copy={copy_idx} len={length}"
+            for (seq_idx, copy_idx, _), length in zip(
+                stage_chains, stage_lengths, strict=True
+            )
+        )
         logger.info(
-            f"Processing stage {stage_idx}/{total_chains}: seq_index={seq_idx}, copy={copy_idx}, length={seq_len}"
+            f"Processing stage {stage_idx}/{total_stages}: "
+            f"{len(stage_chains)} chains, {sum(stage_lengths)} residues | {chain_desc}"
         )
 
         # Generate stage JSON
         temp_json, stage_name = generate_stage_json(
             base_json=base_json,
-            seq_entry=seq_entry,
+            seq_entries=[seq_entry for _, _, seq_entry in stage_chains],
             stage_index=stage_idx,
             out_dir=stage_json_dir,
             em_pt=current_em_pt,
@@ -820,9 +923,13 @@ def main() -> None:
             stage_npz_paths.append(best_npz_path)
             if registration_method == "auto":
                 logger.info(f"[Stage {stage_name}] Registration method comparison:")
-                logger.info(
-                    f"  TEASER++ query recall: {metrics.get('teaser_query_recall', 0.0):.4f}"
-                )
+                teaser_recall = metrics.get("teaser_query_recall")
+                if teaser_recall is None:
+                    logger.info(
+                        "  TEASER++ query recall: N/A (TEASER++ registration failed)"
+                    )
+                else:
+                    logger.info(f"  TEASER++ query recall: {teaser_recall:.4f}")
                 svd_recall = metrics.get('svd_query_recall')
                 if svd_recall is None:
                     logger.info("  SVD query recall: N/A (SVD registration failed)")
@@ -837,7 +944,7 @@ def main() -> None:
                 )
 
         # Crop EM points for next stage (skip for last stage)
-        if stage_idx < total_chains:
+        if stage_idx < total_stages:
             if best_npz_path is None:
                 logger.error(f"[Stage {stage_name}] No valid NPZ path found, cannot crop EM points")
                 raise ValueError(f"Registration failed for stage {stage_name}")
@@ -863,7 +970,7 @@ def main() -> None:
         f.write("\n".join(str(p) for p in stage_npz_paths))
     logger.info(f"Stage NPZ paths written to: {npz_paths_file}")
 
-    logger.info(f"All {total_chains} stages completed. Stage names: {stage_names}")
+    logger.info(f"All {total_stages} stages completed. Stage names: {stage_names}")
 
 
 if __name__ == "__main__":

@@ -193,8 +193,17 @@ def load_atom_array_npz(input_path: str) -> AtomArray:
         "hetero",
         "is_resolved",
     ]:
-        if key in data and data[key] is not None:
-            setattr(arr, key, data[key])
+        if key in data:
+            value = data[key]
+            # Values saved as None come back as 0-d object arrays.
+            if value is None or (value.ndim == 0 and value.item() is None):
+                continue
+            # Use set_annotation (not setattr) so the values become registered
+            # biotite annotation categories. A plain setattr would create a
+            # shadowing instance attribute: later set_annotation calls would
+            # update the category while getattr kept returning the stale
+            # shadowed array.
+            arr.set_annotation(key, value)
     return arr
 
 
