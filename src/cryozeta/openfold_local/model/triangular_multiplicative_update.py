@@ -459,6 +459,18 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if getattr(self, "use_biokernels_trimul", False) and not self.training and z.is_cuda:
+            try:
+                from cryozeta.kernels.biokernels_trimul import try_trimul
+            except (ImportError, OSError):
+                pass
+            else:
+                result = try_trimul(
+                    self, z, mask, residual=inplace_safe and _add_with_inplace
+                )
+                if result is not None:
+                    return result
+
         if (
             use_cuequivariance_multiplicative_update
             and getattr(self, "use_fpf_trimul", False)

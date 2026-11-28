@@ -6,6 +6,7 @@ from cryozeta.model.modules.confidence import ConfidenceHead
 from cryozeta.openfold_local.model import primitives
 from cryozeta.openfold_local.model.triangular_attention import TriangleAttention
 from cryozeta.openfold_local.model.triangular_multiplicative_update import (
+    TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
 )
 
@@ -64,6 +65,29 @@ def test_fpf_trimul_receives_residual_mode(monkeypatch):
         use_cuequivariance_multiplicative_update=True,
     )
     assert torch.equal(actual, z + 1)
+
+
+@pytest.mark.parametrize(
+    "layer", [TriangleMultiplicationOutgoing, TriangleMultiplicationIncoming]
+)
+def test_biokernels_trimul_strided_mask_and_residual(layer):
+    if (
+        not torch.cuda.is_available()
+        or torch.__version__ != "2.15.0+cu132"
+        or torch.cuda.get_device_name() != "NVIDIA RTX A6000"
+    ):
+        pytest.skip("Requires the qualified BioKernels TriMul CUDA stack")
+
+    z = torch.randn(1, 129, 129, 128, dtype=torch.bfloat16, device="cuda")
+    mask = (torch.rand(1, 129, 258, device="cuda") > 0.1)[..., ::2]
+    module = layer(c_z=128, c_hidden=128).eval().cuda()
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        module.linear_z.weight.normal_(std=128**-0.5)
+        module.use_biokernels_trimul = True
+        expected = module(z, mask.contiguous())
+        actual = module(z, mask, inplace_safe=True, _add_with_inplace=True)
+        assert torch.isfinite(expected).all() and expected.count_nonzero() > 0
+        assert torch.equal(actual, z + expected)
 
 
 def test_confidence_transition_is_opt_in():

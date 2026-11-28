@@ -123,17 +123,21 @@ class CryoZeta(nn.Module):
         if triangle_backend not in {"default", "triton", "fpf_k2b"}:
             raise ValueError(f"Unknown triangle attention backend: {triangle_backend}")
         use_fpf_trimul = getattr(configs.infer_setting, "use_fpf_trimul", False)
+        use_biokernels_trimul = getattr(configs.infer_setting, "use_biokernels_trimul", False)
+        if use_fpf_trimul and use_biokernels_trimul:
+            raise ValueError("Select one optional triangle multiplication kernel")
         chunk_budget_mib = getattr(
             configs.infer_setting, "transition_chunk_budget_mib", 0
         )
         if chunk_budget_mib < 0:
             raise ValueError("transition_chunk_budget_mib must be non-negative")
-        if triangle_backend != "default" or use_fpf_trimul or chunk_budget_mib:
+        if triangle_backend != "default" or use_fpf_trimul or use_biokernels_trimul or chunk_budget_mib:
             for module in self.modules():
                 if isinstance(module, TriangleAttention):
                     module.mha.inference_triangle_backend = triangle_backend
                 elif isinstance(module, TriangleMultiplicativeUpdate):
                     module.use_fpf_trimul = use_fpf_trimul
+                    module.use_biokernels_trimul = use_biokernels_trimul
                 elif isinstance(module, Transition) and chunk_budget_mib:
                     module.inference_chunk_budget_bytes = chunk_budget_mib * 1024**2
 

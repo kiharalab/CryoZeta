@@ -323,6 +323,7 @@ def build_arg_str(
     use_triton_confidence_transition: str = "false",
     use_confidence_head: str = "false",
     transition_chunk_budget_mib: int = 0,
+    use_biokernels_trimul: str = "false",
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
@@ -340,6 +341,7 @@ def build_arg_str(
     ]
     parts += ["--infer_setting.triangle_attention_backend", triangle_attention_backend]
     parts += ["--infer_setting.use_fpf_trimul", use_fpf_trimul]
+    parts += ["--infer_setting.use_biokernels_trimul", use_biokernels_trimul]
     parts += ["--infer_setting.use_confidence_head", use_confidence_head]
     parts += [
         "--infer_setting.transition_chunk_budget_mib",
@@ -388,6 +390,7 @@ def run_stage(
         num_dl_workers=int(args.num_dl_workers),
         triangle_attention_backend=args.triangle_attention_backend,
         use_fpf_trimul=args.use_fpf_trimul,
+        use_biokernels_trimul=args.use_biokernels_trimul,
         use_confidence_head=args.use_confidence_head,
         transition_chunk_budget_mib=args.transition_chunk_budget_mib,
         use_triton_confidence_transition=args.use_triton_confidence_transition,
@@ -714,6 +717,7 @@ def parse_args() -> argparse.Namespace:
     )
     for name in (
         "use_fpf_trimul",
+        "use_biokernels_trimul",
         "use_confidence_head",
         "use_triton_confidence_transition",
     ):

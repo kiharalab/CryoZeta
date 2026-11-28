@@ -7,10 +7,53 @@ Enable these options on `cryozeta-inference` or `cryozeta-cycle-predict`. They c
 | `--infer_setting.triangle_attention_backend triton` | `default` | Pure Triton triangle attention in eager FP16/BF16 CUDA inference on SM80 or later. The kernel checks Q/K/V and bias shapes at runtime. The tuned 1,980-token path uses A6000 and Triton 3.9.0. |
 | `--infer_setting.triangle_attention_backend fpf_k2b` | `default` | FlashPairformer K2B for eligible cuEquivariance triangle attention calls. Use `--use_cuequivariance_attention true`. The measured configuration is BF16 with 1,980 tokens, four heads and head width 32 on A6000 with PyTorch `2.15.0+cu132`. |
 | `--infer_setting.use_fpf_trimul true` | `false` | FlashPairformer TriMul v4 in place of cuEquivariance multiplication when `--use_cuequivariance_multiplicative_update true`. The measured configuration is BF16 at 1,980 tokens and 128 channels on the same A6000 stack. |
+| `--infer_setting.use_biokernels_trimul true` | `false` | Forward-only BioKernels TriMul with bounded contraction and strided LayerNorm on RTX A6000 with PyTorch `2.15.0+cu132`. This selects contiguous single-example pair activations with 128 input and hidden channels, 128–4,096 tokens, and BF16 CUDA autocast. |
 | `--infer_setting.use_triton_confidence_transition true` | `false` | FP32 confidence pair Transition on SM86 with 128 channels and a 4× expansion in eager CUDA inference. Requires `--infer_setting.use_confidence_head true` to run. |
 | `--infer_setting.transition_chunk_budget_mib 1024` | `0` | Fixed per-chunk budget for the normalized input and two hidden projections in native CUDA Transition. `0` uses the existing chunking rules. The budget excludes the output, temporary workspaces, and other live model tensors. |
 
-For an existing invocation, append one triangle attention option. The TriMul and confidence Transition flags can be set independently. Calls outside the selected kernel's supported configuration use the regular route. These switches also work across the stages of `cryozeta-cycle-predict`.
+For an existing invocation, append one triangle attention option and choose at most one optional TriMul backend. The confidence Transition flag is independent. Calls outside the selected kernel's supported configuration use the regular route. These switches also work across the stages of `cryozeta-cycle-predict`.
+
+## BioKernels forward triangle multiplication
+
+This port adapts the tiled inference composition from BioKernels `37e3d6e48b476487d30fc53ca1b7dc4e132cd6c3` and its strided LayerNorm forward refinement. The implementation uses the two private projection buffers for bounded contraction, normalizes strided contraction tiles without transposing them to contiguous storage, and writes each gated output tile into its final destination. It uses the existing checkpoint weights and biases. See [`biokernels_trimul.py`](../src/cryozeta/kernels/biokernels_trimul.py).
+
+To select it together with the existing pure Triton attention and native PyTorch pair-bias path, append these flags to either inference command:
+
+```sh
+--infer_setting.use_biokernels_trimul true \
+--infer_setting.triangle_attention_backend triton \
+--use_cuequivariance_attention false \
+--use_cuequivariance_multiplicative_update false \
+--use_cuequivariance_attention_pair_bias false
+```
+
+On Dove, both branches used the same first-block checkpoint weights, BF16 synthetic pair activation, and dense Boolean mask. Times are medians of seven CUDA event measurements at 1,980 tokens and five at the larger sizes, following two warmups. Extra allocated peak is relative to the input and weights already on the GPU. Relative L2 uses the full 1,980-token output and 16 evenly spaced rows for the two larger shapes.
+
+| Tokens | Direction | cuEq time (ms) | BioKernels time (ms) | cuEq extra peak (GiB) | BioKernels extra peak (GiB) | Relative L2 vs cuEq |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1,980 | Outgoing | 44.91 | 72.93 | 5.61 | 2.12 | 0.628% |
+| 1,980 | Incoming | 42.10 | 68.03 | 5.61 | 2.12 | 0.694% |
+| 3,072 | Outgoing | 151.52 | 221.02 | 13.50 | 4.70 | 0.599% |
+| 3,072 | Incoming | 148.06 | 211.92 | 13.50 | 4.70 | 0.657% |
+| 4,096 | Outgoing | 305.24 | 414.30 | 24.00 | 8.26 | 0.580% |
+| 4,096 | Incoming | 314.34 | 418.33 | 24.00 | 8.26 | 0.635% |
+
+### 9BH4 checkpoint inference
+
+All three runs used the same checkpoint, seed 101, one recycle, and five diffusion samples with 20 steps each. The isolated BioKernels arm changed only TriMul. The cuEq-free arm also used pure Triton triangle attention and PyTorch pair-bias attention. Both arms dispatched BioKernels TriMul 200 times. The cuEq-free arm dispatched pure Triton attention 1,600 times and guarded against calls to the three cuEquivariance backends.
+
+| Metric | cuEq reference | Isolated BioKernels TriMul | cuEq-free |
+| --- | ---: | ---: | ---: |
+| Feature-to-export time excluding checkpoint load (s) | 574.75 | 583.73 | 558.67 |
+| Peak allocated (MiB) | 20,768.72 | 20,770.92 | 20,770.92 |
+| Peak reserved (MiB) | 26,468 | 28,384 | 28,384 |
+| Same-sample aligned all-atom RMSD vs reference (Å) | 0 | 0.030–0.073 | 0.045–0.092 |
+| Highest-ranked TEASER sample | 3 | 0 | 4 |
+| Highest fitted `recall_ccmask_ca` | 0.7964 | 0.7886 | 0.7769 |
+| Highest-ranked fitted structures, aligned all-atom RMSD vs reference (Å) | 0 | 0.864 | 0.982 |
+| Highest-ranked fitted structures, original map frame RMSD vs reference (Å) | 0 | 64.213 | 67.271 |
+
+The highest-ranked comparisons pair each run's own top export. The baseline and the two candidates selected different diffusion samples. Larger token counts were tested at the operator level.
 
 ## Default confidence and fixed-budget Transition
 
