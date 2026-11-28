@@ -115,6 +115,12 @@ support, and measurements of numerical differences and fitting ranks.
 Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 
+Both inference commands skip the confidence head by default. Raw structures
+follow diffusion sample order, and superimposed poses are ranked by map-fit
+score. Default runs do not compute PAE, pLDDT, PDE, or confidence rankings.
+Use `--infer_setting.use_confidence_head true` only to reproduce legacy runs
+that used the confidence head.
+
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
 Eligible large BF16 activations also fuse the cast after GroupNorm with SiLU.
@@ -346,9 +352,8 @@ output/example/
     │   └── <name>_timing.txt            #   per-stage timing breakdown
     ├── CryoZeta/                        # Step 2a: standard CryoZeta model
     │   ├── seed_<seed>/
-    │   │   ├── predictions/             #   predicted structures and confidence scores
-    │   │   │   ├── <name>_sample_N.cif  #     predicted structure (mmCIF format)
-    │   │   │   └── <name>_summary_confidence_sample_N.json
+    │   │   ├── predictions/             #   predicted structures in diffusion sample order
+    │   │   │   └── <name>_sample_N.cif  #     predicted structure (mmCIF format)
     │   │   ├── predictions_superimposed/#   structures superimposed onto the EM map
     │   │   ├── predictions_teaser/      #   structures fitted via TEASER++
     │   │   ├── predictions_svd_0.8/     #   structures fitted via SVD (weight 0.8)
@@ -397,9 +402,9 @@ Each predicted structure is then filtered by sampling the mask at the predicted
 coordinates: polymer residues are removed when their centre atom falls outside
 the mask, and ligands/ions are removed when none of their atoms falls inside.
 The filtering is applied to all saved structures (raw, superimposed, and
-fitted variants) and to the atom-level confidence data; samples whose atoms
-all fall outside the mask are skipped. Confidence summaries used for ranking
-are computed before filtering and are unaffected.
+fitted variants). Samples whose atoms all fall outside the mask are skipped.
+When legacy confidence output is enabled, atom-level confidence data is also
+filtered and the summaries reflect the unfiltered structures.
 
 ## License
 

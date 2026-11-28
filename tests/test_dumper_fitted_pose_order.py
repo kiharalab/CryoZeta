@@ -5,8 +5,9 @@ from cryozeta.runner import dumper
 
 
 @pytest.mark.parametrize("include_fits", [True, False])
+@pytest.mark.parametrize("confidence_enabled", [True, False])
 def test_superimposed_pose_order_and_distinct_npz_paths(
-    tmp_path, monkeypatch, include_fits
+    tmp_path, monkeypatch, include_fits, confidence_enabled
 ):
     written = {}
 
@@ -35,6 +36,8 @@ def test_superimposed_pose_order_and_distinct_npz_paths(
             {"method": "teaser", "sample_idx": 0, "score": 0.7},
             {"method": None, "sample_idx": 1, "score": None},
         ]
+    if not confidence_enabled:
+        del pred["summary_confidence"]
     writer.dump("target", 101, pred, atom_array=object(), entity_poly_type={})
 
     def values(suffix):
@@ -43,8 +46,17 @@ def test_superimposed_pose_order_and_distinct_npz_paths(
             for rank in range(4)
         ]
 
-    assert values("") == [40, 20, 10, 30]
-    assert values("_svd_0.4") == [140, 120, 110, 130]
-    assert values("_superimposed") == (
-        [330, 310, 320, 340] if include_fits else [340, 320, 310, 330]
+    assert values("") == ([40, 20, 10, 30] if confidence_enabled else [10, 20, 30, 40])
+    assert values("_svd_0.4") == (
+        [140, 120, 110, 130] if confidence_enabled else [110, 120, 130, 140]
     )
+    if include_fits:
+        assert values("_superimposed") == (
+            [330, 310, 320, 340] if confidence_enabled else [330, 310, 340, 320]
+        )
+    else:
+        assert values("_superimposed") == (
+            [340, 320, 310, 330] if confidence_enabled else [310, 320, 330, 340]
+        )
+    summaries = list(output.rglob("*summary_confidence*.json"))
+    assert len(summaries) == (4 if confidence_enabled else 0)

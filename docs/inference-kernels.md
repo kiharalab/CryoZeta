@@ -7,9 +7,15 @@ Enable these options on `cryozeta-inference` or `cryozeta-cycle-predict`. They c
 | `--infer_setting.triangle_attention_backend triton` | `default` | Pure Triton triangle attention in eager FP16/BF16 CUDA inference on SM80 or later. The kernel checks Q/K/V and bias shapes at runtime. The tuned 1,980-token path uses A6000 and Triton 3.9.0. |
 | `--infer_setting.triangle_attention_backend fpf_k2b` | `default` | FlashPairformer K2B for eligible cuEquivariance triangle attention calls. Use `--use_cuequivariance_attention true`. The measured configuration is BF16 with 1,980 tokens, four heads and head width 32 on A6000 with PyTorch `2.15.0+cu132`. |
 | `--infer_setting.use_fpf_trimul true` | `false` | FlashPairformer TriMul v4 in place of cuEquivariance multiplication when `--use_cuequivariance_multiplicative_update true`. The measured configuration is BF16 at 1,980 tokens and 128 channels on the same A6000 stack. |
-| `--infer_setting.use_triton_confidence_transition true` | `false` | FP32 confidence pair Transition on SM86 with 128 channels and a 4× expansion in eager CUDA inference. This enables fusion and the bounded native fallback when the fused kernel declines. |
+| `--infer_setting.use_triton_confidence_transition true` | `false` | FP32 confidence pair Transition on SM86 with 128 channels and a 4× expansion in eager CUDA inference. Requires `--infer_setting.use_confidence_head true` to run. |
 
 For an existing invocation, append one triangle attention option. The TriMul and confidence Transition flags can be set independently. Calls outside the selected kernel's supported configuration use the regular route. These switches also work across the stages of `cryozeta-cycle-predict`.
+
+## Default confidence
+
+The confidence head is off by default in `cryozeta-inference` and `cryozeta-cycle-predict`. Default output omits PAE, pLDDT, PDE, resolved logits, and confidence JSON. Raw structures follow diffusion sample order. Superimposed structures are ranked by map-fit score, with unfitted fallbacks ordered by sample index. Use `--infer_setting.use_confidence_head true` to reproduce historical confidence runs, adding `--need_atom_confidence true` in standalone inference when full atom-level JSON is needed. The confidence timings later in this document are historical runs with the head enabled.
+
+On Dove (RTX A6000, PyTorch `2.15.0+cu132`), 9BH4 with seed 101 and confidence disabled took 574.75 s feature-to-export, excluding checkpoint loading, with peaks of 20,768.72 MiB allocated and 26,468 MiB reserved. The five structures matched the historical cuEquivariance reference sample by sample at 0.000 Å RMSD. Superimposed exports and `scores.csv` were byte-identical. Raw export indices reflect the switch to diffusion sample order.
 
 ## Dove measurements
 

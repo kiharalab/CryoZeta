@@ -179,23 +179,24 @@ class DataDumper:
             confidence: Save the confidence data as JSON files.
         """
         ranking_scores = [
-            summary["ranking_score"] for summary in pred_dict["summary_confidence"]
+            summary["ranking_score"]
+            for summary in pred_dict.get("summary_confidence", ())
         ]
-        sorted_indices = sorted(
-            range(len(ranking_scores)), key=ranking_scores.__getitem__, reverse=True
-        )
+        sorted_indices = list(range(pred_dict["coordinate"].shape[0]))
+        if ranking_scores:
+            sorted_indices.sort(key=ranking_scores.__getitem__, reverse=True)
+        sample_priorities = ranking_scores or [-i for i in sorted_indices]
 
         fits = pred_dict.get("superimposed_fits")
         fit_indices = sorted_indices
         if fits is not None:
-            # These indices address fitted poses. Each pose also retains its
-            # original sample index for confidence-ranked raw fallback poses.
+            # Unfitted fallback poses follow sample order when confidence is unavailable.
             fit_keys = [
                 (
                     fit["score"] is not None,
                     fit["score"]
                     if fit["score"] is not None
-                    else ranking_scores[fit["sample_idx"]],
+                    else sample_priorities[fit["sample_idx"]],
                 )
                 for fit in fits
             ]
@@ -230,7 +231,7 @@ class DataDumper:
                     coord_type=_COORD_TYPE_MAP.get(result),
                     atom_masks=result_masks,
                 )
-            if result == "coordinate":
+            if result == "coordinate" and ranking_scores:
                 self._save_confidence(
                     data=pred_dict,
                     prediction_save_dir=prediction_save_dir,

@@ -108,6 +108,9 @@ class CryoZeta(nn.Module):
             **configs.model.point_residue_class
         )
         self.point_noise_head = PointNoiseHead(**configs.model.point_noise)
+        self.use_confidence_head = getattr(
+            configs.infer_setting, "use_confidence_head", False
+        )
         self.confidence_head = ConfidenceHead(
             **configs.model.confidence_head,
             use_triton_transition=getattr(
@@ -432,7 +435,9 @@ class CryoZeta(nn.Module):
         time_trackers = []
         for _ in range(N_model_seed):
             pred_dict, log_dict, time_tracker = self._main_inference_loop(
-                input_feature_dict=input_feature_dict,
+                input_feature_dict=dict(input_feature_dict)
+                if N_model_seed > 1
+                else input_feature_dict,
                 N_cycle=N_cycle,
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,
@@ -450,15 +455,15 @@ class CryoZeta(nn.Module):
 
         all_pred_dict = {
             "coordinate": _cat(pred_dicts, "coordinate"),
-            "summary_confidence": _list_join(pred_dicts, "summary_confidence"),
-            "full_data": _list_join(pred_dicts, "full_data"),
-            "plddt": _cat(pred_dicts, "plddt"),
-            "pae": _cat(pred_dicts, "pae"),
-            "pde": _cat(pred_dicts, "pde"),
-            "resolved": _cat(pred_dicts, "resolved"),
             "point_residue_logits": _cat(pred_dicts, "point_residue_logits"),
             "point_noise_logits": _cat(pred_dicts, "point_noise_logits"),
         }
+
+        if "summary_confidence" in pred_dicts[0]:
+            for key in ("summary_confidence", "full_data"):
+                all_pred_dict[key] = _list_join(pred_dicts, key)
+            for key in ("plddt", "pae", "pde", "resolved"):
+                all_pred_dict[key] = _cat(pred_dicts, key)
 
         if all(pred_dict["coordinate_svd_0.8"] is not None for pred_dict in pred_dicts):
             all_pred_dict["coordinate_svd_0.8"] = _cat(pred_dicts, "coordinate_svd_0.8")
@@ -481,7 +486,7 @@ class CryoZeta(nn.Module):
                     {**fit, "sample_idx": fit["sample_idx"] + sample_offset}
                     for fit in pred_dict["superimposed_fits"]
                 )
-                sample_offset += len(pred_dict["summary_confidence"])
+                sample_offset += pred_dict["coordinate"].shape[0]
             all_pred_dict["superimposed_fits"] = fits
 
         all_log_dict = simple_merge_dict_list(log_dicts)
@@ -510,16 +515,15 @@ class CryoZeta(nn.Module):
             _trunk_device = next(self.input_embedder.parameters()).device
         except StopIteration:
             _trunk_device = None
-        if _trunk_device is not None and _trunk_device.type == "cpu":
-            logger.warning(
-                "Trunk modules are on CPU (likely from a previous OOM); reloading to GPU."
-            )
-            _gpu = torch.device("cuda")
-            self._reload_trunk(_gpu)
-            self.diffusion_module.to(_gpu)
-            self.distogram_head.to(_gpu)
-            self.point_residue_head.to(_gpu)
-            self.point_noise_head.to(_gpu)
+        target_device = input_feature_dict["residue_index"].device
+        if _trunk_device is not None and _trunk_device != target_device:
+            logger.warning("Reloading trunk modules to {}.", target_device)
+            self._reload_trunk(target_device)
+            self.diffusion_module.to(target_device)
+            self.point_residue_head.to(target_device)
+            self.point_noise_head.to(target_device)
+            if self.use_confidence_head:
+                self.distogram_head.to(target_device)
 
         N_token = input_feature_dict["residue_index"].shape[-1]
 
@@ -582,6 +586,9 @@ class CryoZeta(nn.Module):
                 use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
             )
 
+        if not self.use_confidence_head:
+            del s_inputs, s, z
+
         step_diffusion = time.time()
         time_tracker.update({"diffusion": step_diffusion - step_trunk})
         logger.info(
@@ -591,11 +598,11 @@ class CryoZeta(nn.Module):
             torch.cuda.empty_cache()
 
         with record_function("prediction_heads"):
-            # Distogram logits: log contact_probs only, to reduce the dimension
-            pred_dict["contact_probs"] = sample_confidence.compute_contact_prob(
-                distogram_logits=self.distogram_head(z),
-                **sample_confidence.get_bin_params(self.configs.loss.distogram),
-            )  # [N_token, N_token]
+            if self.use_confidence_head:
+                pred_dict["contact_probs"] = sample_confidence.compute_contact_prob(
+                    distogram_logits=self.distogram_head(z),
+                    **sample_confidence.get_bin_params(self.configs.loss.distogram),
+                )
             pred_dict["point_residue_logits"] = self.point_residue_head(pz.unsqueeze(0))
             pred_dict["point_noise_logits"] = self.point_noise_head(pz.unsqueeze(0))
 
@@ -752,6 +759,14 @@ class CryoZeta(nn.Module):
         del output_dict, ca_coordinate, ca_mask
         del coordinate_svd_08, coordinate_svd_04, coordinate_teaser
         del coordinate_superimposed
+
+        if not self.use_confidence_head:
+            step_end = time.time()
+            time_tracker["fitting"] = step_end - step_diffusion
+            time_tracker["model_forward"] = step_end - step_st
+            logger.info("Model fitting done in {:.1f}s.", time_tracker["fitting"])
+            self._reload_trunk(trunk_device)
+            return pred_dict, log_dict, time_tracker
 
         # Offload modules not needed by confidence head to CPU
         self.diffusion_module.to("cpu")

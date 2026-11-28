@@ -321,6 +321,7 @@ def build_arg_str(
     triangle_attention_backend: str = "default",
     use_fpf_trimul: str = "false",
     use_triton_confidence_transition: str = "false",
+    use_confidence_head: str = "false",
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
@@ -328,11 +329,21 @@ def build_arg_str(
     parts += ["--dump_dir", str(dump_dir)]
     parts += ["--input_json_path", str(input_json)]
     parts += ["--use_cuequivariance_attention", str(use_cuequivariance_attention)]
-    parts += ["--use_cuequivariance_multiplicative_update", str(use_cuequivariance_multiplicative_update)]
-    parts += ["--use_cuequivariance_attention_pair_bias", str(use_cuequivariance_attention_pair_bias)]
+    parts += [
+        "--use_cuequivariance_multiplicative_update",
+        str(use_cuequivariance_multiplicative_update),
+    ]
+    parts += [
+        "--use_cuequivariance_attention_pair_bias",
+        str(use_cuequivariance_attention_pair_bias),
+    ]
     parts += ["--infer_setting.triangle_attention_backend", triangle_attention_backend]
     parts += ["--infer_setting.use_fpf_trimul", use_fpf_trimul]
-    parts += ["--infer_setting.use_triton_confidence_transition", use_triton_confidence_transition]
+    parts += ["--infer_setting.use_confidence_head", use_confidence_head]
+    parts += [
+        "--infer_setting.use_triton_confidence_transition",
+        use_triton_confidence_transition,
+    ]
     parts += ["--model.N_cycle", str(n_cycle)]
     parts += ["--sample_diffusion.N_sample", str(n_sample)]
     parts += ["--sample_diffusion.N_step", str(n_step)]
@@ -360,14 +371,19 @@ def run_stage(
         dump_dir=dump_dir,
         input_json=temp_json,
         use_cuequivariance_attention=str(args.use_cuequivariance_attention).lower(),
-        use_cuequivariance_multiplicative_update=str(args.use_cuequivariance_multiplicative_update).lower(),
-        use_cuequivariance_attention_pair_bias=str(args.use_cuequivariance_attention_pair_bias).lower(),
+        use_cuequivariance_multiplicative_update=str(
+            args.use_cuequivariance_multiplicative_update
+        ).lower(),
+        use_cuequivariance_attention_pair_bias=str(
+            args.use_cuequivariance_attention_pair_bias
+        ).lower(),
         n_cycle=int(args.model_N_cycle),
         n_sample=int(args.sample_N_sample),
         n_step=int(args.sample_N_step),
         num_dl_workers=int(args.num_dl_workers),
         triangle_attention_backend=args.triangle_attention_backend,
         use_fpf_trimul=args.use_fpf_trimul,
+        use_confidence_head=args.use_confidence_head,
         use_triton_confidence_transition=args.use_triton_confidence_transition,
     )
     configs = parse_configs(
@@ -679,11 +695,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
     p.add_argument("--use_cuequivariance_attention_pair_bias", default="false")
     p.add_argument(
-        "--infer_setting.triangle_attention_backend", dest="triangle_attention_backend",
-        choices=("default", "triton", "fpf_k2b"), default="default",
+        "--infer_setting.triangle_attention_backend",
+        dest="triangle_attention_backend",
+        choices=("default", "triton", "fpf_k2b"),
+        default="default",
     )
-    for name in ("use_fpf_trimul", "use_triton_confidence_transition"):
-        p.add_argument(f"--infer_setting.{name}", dest=name, choices=("true", "false"), default="false")
+    for name in (
+        "use_fpf_trimul",
+        "use_confidence_head",
+        "use_triton_confidence_transition",
+    ):
+        p.add_argument(
+            f"--infer_setting.{name}",
+            dest=name,
+            choices=("true", "false"),
+            default="false",
+        )
     p.add_argument("--num_dl_workers", type=int, default=1)
     p.add_argument("--crop.sample_index", dest="crop_sample_index", type=int, default=0)
 

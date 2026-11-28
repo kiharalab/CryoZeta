@@ -98,7 +98,18 @@ class InferenceRunner:
     def init_model(self) -> None:
         with torch.device("meta"):
             self.model = CryoZeta(self.configs)
-        self.model.to_empty(device=self.device)
+        if self.model.use_confidence_head:
+            self.model.to_empty(device=self.device)
+        else:
+            # Keep strict checkpoint loading while avoiding GPU residency for unused heads.
+            self.model.to_empty(device=self.device, recurse=False)
+            for name, module in self.model.named_children():
+                device = (
+                    "cpu"
+                    if name in {"confidence_head", "distogram_head"}
+                    else self.device
+                )
+                module.to_empty(device=device)
 
     def load_checkpoint(self) -> None:
         checkpoint_path = self.configs.load_checkpoint_path
