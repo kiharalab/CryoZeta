@@ -1,6 +1,6 @@
 """Standalone correctness + memory + speed check for the fused Triton transition.
 
-FP32 only: the fused kernel supports CUDA float32 tensors exclusively. The
+SM86 only: the fused kernel supports CUDA float32 tensors exclusively. The
 fp64 reference is computed in bounded 4096-row chunks so even checkpoint-scale
 row counts cannot OOM the GPU.
 
@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, "src")
 
-from cryozeta.model.modules.triton_transition import try_fused_transition
+from cryozeta.kernels.triton_transition import try_fused_transition
 
 # Hard cap on rows materialized for the fp64 reference in one chunk.
 REF_CHUNK = 4096
@@ -91,9 +91,10 @@ def main():
     args = p.parse_args()
 
     eps = 1e-5
-    print(
-        f"device: {torch.cuda.get_device_name(0)}, cc {torch.cuda.get_device_capability(0)}"
-    )
+    capability = torch.cuda.get_device_capability(0)
+    if capability != (8, 6):
+        p.error("the production Triton Transition requires CUDA capability 8.6")
+    print(f"device: {torch.cuda.get_device_name(0)}, cc {capability}")
 
     # ---- correctness across row counts, fp32 only ----
     for rows in (1, 7, 33, 1025, 2048, args.rows):

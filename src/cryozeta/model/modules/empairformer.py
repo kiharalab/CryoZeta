@@ -489,7 +489,6 @@ class MSABlock(nn.Module):
         is_last_block: bool = False,
         msa_dropout: float = 0.15,
         pair_dropout: float = 0.25,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """
         Args:
@@ -499,7 +498,6 @@ class MSABlock(nn.Module):
             is_last_block (int): if this is the last block of MSAModule. Defaults to False.
             msa_dropout (float, optional): dropout ratio for msa block. Defaults to 0.15.
             pair_dropout (float, optional): dropout ratio for pair stack. Defaults to 0.25.
-            use_opm_tilelang (bool): Use TileLang kernel for OPM. Defaults to False.
         """
         super().__init__()
         self.c_m = c_m
@@ -511,7 +509,6 @@ class MSABlock(nn.Module):
             c_m=self.c_m,
             c_z=self.c_z,
             c_hidden=self.c_hidden,
-            use_tilelang=use_opm_tilelang,
         )
         if not self.is_last_block:
             # MSA stack
@@ -595,7 +592,6 @@ class MSAModule(nn.Module):
         pair_dropout: float = 0.25,
         blocks_per_ckpt: int | None = 1,
         msa_configs: dict | None = None,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """Main Entry of MSAModule
 
@@ -656,7 +652,6 @@ class MSAModule(nn.Module):
                 is_last_block=(i + 1 == n_blocks),
                 msa_dropout=msa_dropout,
                 pair_dropout=pair_dropout,
-                use_opm_tilelang=use_opm_tilelang,
             )
             self.blocks.append(block)
 
@@ -908,7 +903,6 @@ class EMPairformerBlock(nn.Module):
         pair_dropout: float,
         inf: float,
         eps: float,
-        use_opm_tilelang: bool = False,
     ):
         super().__init__()
 
@@ -964,13 +958,11 @@ class EMPairformerBlock(nn.Module):
             c_pz,
             c_z,
             c_hidden_mul,
-            use_tilelang=use_opm_tilelang,
         )
         self.outter_column_product_mean = OuterProductMean(
             c_pz,
             c_p,
             c_hidden_mul,
-            use_tilelang=use_opm_tilelang,
         )
 
         self.tri_mul_out = TriangleMultiplicationOutgoing(
@@ -1235,7 +1227,6 @@ class EMPairformerStack(nn.Module):
         inf: float,
         eps: float,
         blocks_per_ckpt: int | None = None,
-        use_opm_tilelang: bool = False,
     ) -> None:
         """
         Args:
@@ -1272,7 +1263,6 @@ class EMPairformerStack(nn.Module):
                 pair_dropout=pair_dropout,
                 inf=inf,
                 eps=eps,
-                use_opm_tilelang=use_opm_tilelang,
             )
             self.blocks.append(block)
 

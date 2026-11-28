@@ -2,10 +2,8 @@
 
 One kernel computes, per row tile, the LayerNorm, both c_in -> n*c_in
 projections, the silu(a) * b gate, and the n*c_in -> c_in output projection,
-accumulating in FP32 with an explicitly selected input precision
-(``CRYOZETA_TRITON_TRANSITION_PRECISION`` defaults to ``tf32x3`` on SM86
-and ``ieee`` elsewhere). Only the output is stored, so the two
-hidden projection tiles stay inside the kernel.
+accumulating in FP32 with TF32x3 inputs on SM86. Only the output is stored,
+so the two hidden projection tiles stay inside the kernel.
 
 Weights are read in their original contiguous layouts (``wa``/``wb`` are
 [H, CIN], ``wo`` is [CIN, H]); tiles load in native memory order and are
@@ -18,7 +16,6 @@ no autograd, and dimensions the FP32 dots support. Anything else returns
 
 import logging
 import math
-import os
 
 import torch
 
@@ -57,7 +54,6 @@ if triton is not None:
         H: tl.constexpr,
         BM: tl.constexpr,
         BN: tl.constexpr,
-        IP: tl.constexpr,
     ):
         # One CTA owns BM rows and the full CIN output width: each row's
         # LayerNorm and every hidden projection are computed exactly once.
@@ -99,13 +95,13 @@ if triton is not None:
                 mask=mask_h[:, None] & mask_k[None, :],
                 other=0.0,
             )
-            a = tl.dot(xn, tl.trans(wa_tile), input_precision=IP)
+            a = tl.dot(xn, tl.trans(wa_tile), input_precision="tf32x3")
             wb_tile = tl.load(
                 wb_ptr + rows_h[:, None] * CIN + offs_k[None, :],
                 mask=mask_h[:, None] & mask_k[None, :],
                 other=0.0,
             )
-            b = tl.dot(xn, tl.trans(wb_tile), input_precision=IP)
+            b = tl.dot(xn, tl.trans(wb_tile), input_precision="tf32x3")
             g = a * tl.sigmoid(a) * b
             # wo is [CIN, H] row-major; the native-order tile is [KP2, BN]
             # (coalesced along H) and transposes to the [BN, KP2] operand.
@@ -114,7 +110,7 @@ if triton is not None:
                 mask=mask_k[:, None] & mask_h[None, :],
                 other=0.0,
             )
-            acc = tl.dot(g, tl.trans(wo_tile), acc, input_precision=IP)
+            acc = tl.dot(g, tl.trans(wo_tile), acc, input_precision="tf32x3")
 
         tl.store(
             out_ptr + offs_m[:, None] * CIN + offs_k[None, :],
@@ -123,13 +119,9 @@ if triton is not None:
         )
 
 
-# IEEE uses the original SM86 tile. On a real 9BH4 checkpoint replay,
-# TF32x3 at 16x32 eliminated register spills and ran faster on SM86.
-_IEEE_TILE = (32, 32, 8)
+# This tile avoided register spills on the 9BH4 checkpoint replay.
 _SM86_TF32X3_TILE = (16, 32, 4)
 _NUM_STAGES = 1
-
-_PRECISIONS = ("ieee", "tf32x3")
 
 
 def try_fused_transition(
@@ -147,8 +139,7 @@ def try_fused_transition(
     device/dtype/layout, autograd or compile activity, unsupported sizes, or
     a tile configuration that previously failed on this device); the caller
     then uses the reference PyTorch path. Raises ``ValueError`` only for a
-    non-finite or negative ``eps`` or an unknown precision override, both of
-    which are caller bugs rather than unsupported inputs.
+    non-finite or negative ``eps``.
     """
     if not math.isfinite(eps) or eps < 0:
         raise ValueError(f"LayerNorm eps must be finite and >= 0, got {eps}")
@@ -188,26 +179,12 @@ def try_fused_transition(
             or not weight.is_contiguous()
         ):
             return None
-    capability = torch.cuda.get_device_capability(x.device)
-    if capability[0] < 8:
+    if torch.cuda.get_device_capability(x.device) != (8, 6):
         return None
 
-    default_precision = "tf32x3" if capability == (8, 6) else "ieee"
-    precision = os.getenv("CRYOZETA_TRITON_TRANSITION_PRECISION", default_precision)
-    if precision not in _PRECISIONS:
-        raise ValueError(
-            f"Unknown Triton Transition precision {precision!r}, "
-            f"expected one of {_PRECISIONS}"
-        )
-
     kp2 = max(16, triton.next_power_of_2(c_in))
-    tile = (
-        _SM86_TF32X3_TILE
-        if capability == (8, 6) and precision == "tf32x3"
-        else _IEEE_TILE
-    )
-    bm, bn, num_warps = tile
-    config_key = (x.device.index, c_in, h, tile, precision)
+    bm, bn, num_warps = _SM86_TF32X3_TILE
+    config_key = (x.device.index, c_in, h)
     if config_key in _failed_configs:
         return None
 
@@ -230,24 +207,20 @@ def try_fused_transition(
                 H=h,
                 BM=bm,
                 BN=bn,
-                IP=precision,
                 num_warps=num_warps,
                 num_stages=_NUM_STAGES,
             )
     except (TritonError, FileNotFoundError, RuntimeError) as exc:
         if isinstance(exc, RuntimeError) and "ptxas" not in str(exc).lower():
             raise
-        # Record only this exact tile configuration as failed; other tiles
-        # and other devices stay eligible.
         _failed_configs.add(config_key)
         _logger.warning(
-            "Fused transition tile BM=%d BN=%d for CIN=%d H=%d (%s) unavailable "
+            "Fused transition tile BM=%d BN=%d for CIN=%d H=%d unavailable "
             "on %s, using PyTorch: %s",
             bm,
             bn,
             c_in,
             h,
-            precision,
             x.device,
             exc,
         )

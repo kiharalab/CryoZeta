@@ -133,7 +133,6 @@ else
 fi
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
 CONDA_PREFIX="${PROJECT_ROOT}/.pixi/envs/${PIXI_ENV}"
@@ -157,7 +156,6 @@ use_cuequivariance=true  # Master toggle for all cuEquivariance modules
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
-use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
 detection_checkpoint_path="${cli_detection_checkpoint:-${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors}"
 
@@ -300,7 +298,6 @@ CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-cycle-predict \
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
-    --use_opm_tilelang "${use_opm_tilelang}" \
     --num_dl_workers 1 \
     ${registration_flag}
 

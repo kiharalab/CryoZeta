@@ -54,7 +54,6 @@ model_configs = {
     "use_cuequivariance_attention": True,
     "use_cuequivariance_multiplicative_update": True,
     "use_cuequivariance_attention_pair_bias": False,
-    "use_opm_tilelang": False,
     "find_unused_parameters": False,
     "dtype": "bf16",
     "loss_metrics_sparse_enable": True,
@@ -116,7 +115,6 @@ model_configs = {
             "msa_dropout": 0.15,
             "pair_dropout": 0.25,
             "blocks_per_ckpt": GlobalConfigValue("blocks_per_ckpt"),
-            "use_opm_tilelang": GlobalConfigValue("use_opm_tilelang"),
         },
         "pairformer": {
             "n_blocks": GlobalConfigValue("n_blocks"),
@@ -150,7 +148,6 @@ model_configs = {
             "tune_chunk_size": True,
             "inf": 1e9,
             "eps": 1e-8,
-            "use_opm_tilelang": GlobalConfigValue("use_opm_tilelang"),
         },
         "diffusion_module": {
             "use_fine_grained_checkpoint": True,

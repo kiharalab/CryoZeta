@@ -1,4 +1,4 @@
-"""Streaming CUDA inference fallback for square, pair-biased triangle attention."""
+"""Experimental streaming CUDA kernel for square, pair-biased triangle attention."""
 
 import logging
 
@@ -99,6 +99,7 @@ _failed_devices = set()
 
 
 def try_triangle(q, k, v, biases):
+    """Evaluate projected, scaled queries, or decline unsupported inputs."""
     if (
         not q.is_cuda
         or torch.is_grad_enabled()

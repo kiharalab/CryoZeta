@@ -13,7 +13,6 @@
 # under GPLv3.
 
 import math
-import os
 from functools import partial
 
 import torch
@@ -143,31 +142,18 @@ class Transition(nn.Module):
             size = x.shape[-2]
             x = x.reshape(-1, dim_size)
             budget = self.inference_hidden_budget_bytes
-            backend = (
-                os.getenv("CRYOZETA_TRANSITION_BACKEND", "auto")
-                if budget is not None
-                else None
-            )
             can_fuse = (
-                backend in ("auto", "triton")
+                budget is not None
                 and x.is_cuda
                 and not torch.is_grad_enabled()
                 and not torch.is_autocast_enabled("cuda")
                 and not torch.compiler.is_compiling()
                 and x.dtype == torch.float32
                 and (self.c_in, self.n) == (128, 4)
-            )
-            if (
-                can_fuse
-                and backend == "auto"
                 and torch.cuda.get_device_capability(x.device) == (8, 6)
-            ):
-                # The SM86 TF32x3 tile was validated in the production pipeline.
-                backend = "triton"
-            if can_fuse and backend == "triton":
-                from cryozeta.model.modules.triton_transition import (
-                    try_fused_transition,
-                )
+            )
+            if can_fuse:
+                from cryozeta.kernels.triton_transition import try_fused_transition
 
                 fused = try_fused_transition(
                     x,
@@ -181,12 +167,7 @@ class Transition(nn.Module):
                 if fused is not None:
                     return fused.reshape(*other_dims, self.c_in)
             chunks = x.chunk(1 if size < 3200 else 8, dim=0)
-            if (
-                backend in ("torch", "triton")
-                and budget is not None
-                and x.is_cuda
-                and not torch.is_grad_enabled()
-            ):
+            if can_fuse and budget is not None:
                 # Each row needs two hidden projections before the gated product.
                 bytes_per_row = 2 * self.n * self.c_in * x.element_size()
                 max_rows = max(1, budget // bytes_per_row)

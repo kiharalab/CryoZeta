@@ -249,7 +249,6 @@ def build_arg_str(
     use_cuequivariance_attention: str,
     use_cuequivariance_multiplicative_update: str,
     use_cuequivariance_attention_pair_bias: str,
-    use_opm_tilelang: str,
     n_cycle: int,
     n_sample: int,
     n_step: int,
@@ -263,7 +262,6 @@ def build_arg_str(
     parts += ["--use_cuequivariance_attention", str(use_cuequivariance_attention)]
     parts += ["--use_cuequivariance_multiplicative_update", str(use_cuequivariance_multiplicative_update)]
     parts += ["--use_cuequivariance_attention_pair_bias", str(use_cuequivariance_attention_pair_bias)]
-    parts += ["--use_opm_tilelang", str(use_opm_tilelang)]
     parts += ["--model.N_cycle", str(n_cycle)]
     parts += ["--sample_diffusion.N_sample", str(n_sample)]
     parts += ["--sample_diffusion.N_step", str(n_step)]
@@ -293,7 +291,6 @@ def run_stage(
         use_cuequivariance_attention=str(args.use_cuequivariance_attention).lower(),
         use_cuequivariance_multiplicative_update=str(args.use_cuequivariance_multiplicative_update).lower(),
         use_cuequivariance_attention_pair_bias=str(args.use_cuequivariance_attention_pair_bias).lower(),
-        use_opm_tilelang=str(args.use_opm_tilelang).lower(),
         n_cycle=int(args.model_N_cycle),
         n_sample=int(args.sample_N_sample),
         n_step=int(args.sample_N_step),
@@ -584,7 +581,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--use_cuequivariance_attention", default="true")
     p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
     p.add_argument("--use_cuequivariance_attention_pair_bias", default="false")
-    p.add_argument("--use_opm_tilelang", default="false")
     p.add_argument("--num_dl_workers", type=int, default=1)
     p.add_argument("--crop.sample_index", dest="crop_sample_index", type=int, default=0)
 

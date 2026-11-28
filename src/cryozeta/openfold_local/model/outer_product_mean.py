@@ -13,22 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from functools import partial
 
 import torch
 import torch.nn as nn
 
+from cryozeta.model.modules.opm import opm_chunked
 from cryozeta.openfold_local.model.primitives import Linear
-from cryozeta.openfold_local.utils.chunk_utils import chunk_layer
 from cryozeta.openfold_local.utils.precision_utils import is_fp16_enabled
-from cryozeta.model.modules.opm_tilelang import opm_chunked
-
-try:
-    from cryozeta.model.modules.opm_tilelang import opm_tilelang
-    _tilelang_available = True
-except (ImportError, OSError, RuntimeError):
-    _tilelang_available = False
 
 
 class OuterProductMean(nn.Module):
@@ -36,7 +27,7 @@ class OuterProductMean(nn.Module):
     Implements Algorithm 10.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, eps=1e-3, use_tilelang=False):
+    def __init__(self, c_m, c_z, c_hidden, eps=1e-3):
         """
         Args:
             c_m:
@@ -52,51 +43,11 @@ class OuterProductMean(nn.Module):
         self.c_z = c_z
         self.c_hidden = c_hidden
         self.eps = eps
-        self.use_tilelang = use_tilelang and _tilelang_available
 
         self.layer_norm = nn.LayerNorm(c_m)
         self.linear_1 = Linear(c_m, c_hidden)
         self.linear_2 = Linear(c_m, c_hidden)
         self.linear_out = Linear(c_hidden**2, c_z, init="final")
-
-    def _opm(self, a, b):
-        # [*, N_res, N_res, C, C]
-        outer = torch.einsum("...bac,...dae->...bdce", a, b)
-
-        # [*, N_res, N_res, C * C]
-        outer = outer.reshape((*outer.shape[:-2], -1))
-
-        # [*, N_res, N_res, C_z]
-        outer = self.linear_out(outer)
-
-        return outer
-
-    @torch.jit.ignore
-    def _chunk(self, a: torch.Tensor, b: torch.Tensor, chunk_size: int) -> torch.Tensor:
-        # Since the "batch dim" in this case is not a true batch dimension
-        # (in that the shape of the output depends on it), we need to
-        # iterate over it ourselves
-        a_reshape = a.reshape((-1, *a.shape[-3:]))
-        b_reshape = b.reshape((-1, *b.shape[-3:]))
-        out = []
-        for a_prime, b_prime in zip(a_reshape, b_reshape):
-            outer = chunk_layer(
-                partial(self._opm, b=b_prime),
-                {"a": a_prime},
-                chunk_size=chunk_size,
-                no_batch_dims=1,
-            )
-            out.append(outer)
-
-        # For some cursed reason making this distinction saves memory
-        if len(out) == 1:
-            outer = out[0].unsqueeze(0)
-        else:
-            outer = torch.stack(out, dim=0)
-
-        outer = outer.reshape(a.shape[:-3] + outer.shape[1:])
-
-        return outer
 
     def _project_by_sequence(self, m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # Write projections directly in contraction order [N_res, N_seq, H].
@@ -127,11 +78,8 @@ class OuterProductMean(nn.Module):
         Returns:
             [*, N_res, N_res, C_z] pair embedding update
         """
-        use_chunked = os.environ.get("USE_OPM_CHUNKED", "1") == "1"
         unmasked = (
             mask is None
-            and use_chunked
-            and not self.use_tilelang
             and isinstance(self.eps, (float, int))
             and m.is_cuda
             and not torch.is_grad_enabled()
@@ -187,23 +135,7 @@ class OuterProductMean(nn.Module):
             norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
             norm = (norm + self.eps).squeeze(-1)
 
-        if self.use_tilelang:
-            return opm_tilelang(
-                a, b, self.linear_out.weight, self.linear_out.bias, norm
-            )
-
-        if use_chunked:
-            return opm_chunked(
-                a, b, self.linear_out.weight, self.linear_out.bias, norm
-            )
-
-        # Original einsum path
-        if chunk_size is not None:
-            outer = self._chunk(a, b, chunk_size)
-        else:
-            outer = self._opm(a, b)
-        outer = outer / norm.unsqueeze(-1)
-        return outer
+        return opm_chunked(a, b, self.linear_out.weight, self.linear_out.bias, norm)
 
     def forward(
         self,

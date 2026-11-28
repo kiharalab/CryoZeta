@@ -107,20 +107,20 @@ The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
 PyTorch scaled dot-product attention. Triangle attention still uses
 cuEquivariance when supported. In `cu11`, triangle attention, triangle
 multiplication and pair-biased transformer attention use the PyTorch paths.
-Set `CRYOZETA_TRITON_TRIANGLE=1` to try the streaming Triton triangle-attention
-fallback during eager inference on GPUs with compute capability 8.0 or later.
-It handles FP16/BF16 projected queries with head widths 16, 32 or 64 and
-lengths 32–4096 when the mask and pair bias have the supported layouts.
-cuEquivariance keeps priority where eligible. Other inputs use PyTorch.
+Triangle attention uses bounded PyTorch attention when cuEquivariance is
+ineligible or its kernel cannot run. The experimental streaming kernel is
+available as `cryozeta.kernels.triton_triangle.try_triangle` for direct
+benchmarks on SM80 and later with FP16 or BF16 inputs. Production inference
+keeps the PyTorch fallback, including on pre-Ampere GPUs in `cu11`.
 Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 
 The detector uses a fused Triton GeGLU kernel for large FP16/BF16 projections
 during eager inference on NVIDIA GPUs with compute capability 8.0 or higher.
-Set `CRYOZETA_TRITON_GEGLU=0` to benchmark the eager PyTorch implementation.
-Large BF16 activations also fuse the cast after GroupNorm with SiLU. This kernel
-takes the element count at runtime so different map sizes share a compiled
-kernel. Set `CRYOZETA_TRITON_CAST_SILU=0` to disable that optimization.
+Eligible large BF16 activations also fuse the cast after GroupNorm with SiLU.
+The activation kernel takes the element count at runtime so different map
+sizes share a compiled kernel. The Triton sources live in
+[`src/cryozeta/kernels`](src/cryozeta/kernels).
 
 The detector CLI's `--compile` option compiles the whole model with PyTorch.
 To compare output differences, first-call time, and warmed latency across batch
@@ -205,7 +205,9 @@ bash /path/to/CryoZeta/large_inference_demo.sh --example 9nb5
 
 This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
 
-The workspace-reusing cuBLAS OPM route runs automatically for unmasked BF16
+The previous `--use_opm_tilelang` argument has been removed. OPM selects a
+PyTorch/cuBLAS implementation based on the workload and device. The
+workspace-reusing cuBLAS OPM route runs automatically for unmasked BF16
 inference with 1980 residues, a reduction length of 1980, and 128 hidden
 channels on the RTX A6000 with PyTorch `2.15.0+cu132`, CUDA BF16 autocast, and
 cuBLAS with BF16 reduced-precision reduction enabled. The final 12 rows and

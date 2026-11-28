@@ -1,9 +1,9 @@
 """Time detection on changing window sizes using the same checkpoint and inputs."""
 
 import argparse
-import os
 import statistics
 import time
+from unittest.mock import patch
 
 import torch
 
@@ -62,9 +62,8 @@ def main():
             x = torch.randn(
                 batch, 1, roi, roi, roi, dtype=dtype, device="cuda", generator=generator
             )
-            os.environ["CRYOZETA_TRITON_CAST_SILU"] = "0"
-            ref, _, eager_ms = measure(baseline, x, args.repeats)
-            os.environ["CRYOZETA_TRITON_CAST_SILU"] = "1"
+            with patch("cryozeta.em.blocks.cast_silu", None):
+                ref, _, eager_ms = measure(baseline, x, args.repeats)
             out, first, candidate_ms = measure(candidate, x, args.repeats)
             error = (ref - out).float().abs()
             print(

@@ -1,7 +1,6 @@
 """Inference-only GeGLU for contiguous, packed linear projections."""
 
 import logging
-import os
 from functools import cache
 
 import torch
@@ -44,7 +43,6 @@ def try_geglu(packed):
         or not packed.is_contiguous()
         or not 2**20 <= packed.numel() < 2**31
         or torch.cuda.get_device_capability(packed.device)[0] < 8
-        or os.getenv("CRYOZETA_TRITON_GEGLU", "1") == "0"
     ):
         return None
     width = packed.shape[-1] // 2

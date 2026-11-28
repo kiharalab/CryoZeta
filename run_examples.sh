@@ -9,7 +9,6 @@ EXAMPLE_NAME=${1:-all}
 GPU_ID=${2:-0}
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 . "$(dirname -- "${BASH_SOURCE[0]}")/scripts/detect_pixi_env.sh"
 
@@ -30,7 +29,6 @@ seed=101
 use_cuequivariance_attention=true
 use_cuequivariance_multiplicative_update=true
 use_cuequivariance_attention_pair_bias=false
-use_opm_tilelang=false
 overwrite=false
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
@@ -65,7 +63,6 @@ run_example() {
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \
@@ -84,7 +81,6 @@ run_example() {
         --use_cuequivariance_attention ${use_cuequivariance_attention} \
         --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
         --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
-        --use_opm_tilelang ${use_opm_tilelang} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \

@@ -14,7 +14,6 @@
 # limitations under the License.
 import importlib
 import math
-import os
 import sys
 from collections.abc import Callable
 
@@ -365,23 +364,6 @@ def triangle_mask_bias(mask, x, inf):
     return min(inf, torch.finfo(dtype).max) * (mask.to(dtype) - 1)
 
 
-def _triangle_fallback(q, k, v, biases):
-    if (
-        q.is_cuda
-        and not torch.is_grad_enabled()
-        and os.getenv("CRYOZETA_TRITON_TRIANGLE") == "1"
-    ):
-        try:
-            from .triton_triangle import try_triangle
-        except ImportError:
-            return _bounded_attention(q, k, v, biases)
-
-        result = try_triangle(q, k, v, biases)
-        if result is not None:
-            return result
-    return _bounded_attention(q, k, v, biases)
-
-
 def _bounded_attention(q, k, v, biases, *, use_sdpa=False):
     # Allow space for FP32 logits, probabilities and softmax workspace.
     budget = 128 * 1024**2
@@ -715,7 +697,7 @@ class Attention(nn.Module):
                     triangle_mask_bias(biases[0], q_x, _inf),
                     biases[1],
                 ]
-                o = _triangle_fallback(
+                o = _bounded_attention(
                     q / math.sqrt(self.c_hidden), k, v, biases
                 ).transpose(-2, -3)
         elif use_lma:
@@ -734,7 +716,7 @@ class Attention(nn.Module):
             # _prep_qkv already scaled Q. Keep the pair bias broadcast across rows.
             o = _bounded_attention(q, k, v, biases, use_sdpa=True).transpose(-2, -3)
         elif triangle_fallback:
-            o = _triangle_fallback(q, k, v, biases).transpose(-2, -3)
+            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         else:
             o = _attention(q, k, v, biases)
             o = o.transpose(-2, -3)

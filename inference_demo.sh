@@ -127,7 +127,6 @@ else
 fi
 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export USE_OPM_CHUNKED=1  # Set to 0 to use original einsum OPM
 
 # Triton needs ptxas on PATH; Blackwell (sm_100+) requires CUDA 13+ ptxas
 CONDA_PREFIX="${PROJECT_ROOT}/.pixi/envs/${PIXI_ENV}"
@@ -151,7 +150,6 @@ use_cuequivariance=true  # Master toggle for all cuEquivariance modules
 use_cuequivariance_attention=${use_cuequivariance}
 use_cuequivariance_multiplicative_update=${use_cuequivariance}
 use_cuequivariance_attention_pair_bias=${use_cuequivariance}
-use_opm_tilelang=false  # Set to true to use TileLang OPM kernel (overrides USE_OPM_CHUNKED)
 mode="${cli_mode:-combined}"  # cryozeta, cryozeta-interpolate, or combined
 overwrite="${cli_overwrite}"
 checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
@@ -218,7 +216,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
-    --use_opm_tilelang "${use_opm_tilelang}" \
     --model.N_cycle "${N_cycle}" \
     --sample_diffusion.N_sample "${N_sample}" \
     --sample_diffusion.N_step "${N_step}" \
@@ -238,7 +235,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --use_cuequivariance_attention "${use_cuequivariance_attention}" \
     --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
     --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
-    --use_opm_tilelang "${use_opm_tilelang}" \
     --model.N_cycle "${N_cycle}" \
     --sample_diffusion.N_sample "${N_sample}" \
     --sample_diffusion.N_step "${N_step}" \

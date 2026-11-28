@@ -55,7 +55,6 @@ def test_tiled_projection_matches_untiled_bitwise():
 
 def route(opm, m, mask, monkeypatch):
     """Run the real forward with projection/contraction mocked; report routing."""
-    monkeypatch.setenv("USE_OPM_CHUNKED", "1")
     calls = {}
 
     def fake_project(self, x):

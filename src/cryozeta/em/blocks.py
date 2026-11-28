@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import os
 from itertools import islice
 
 import numpy as np
@@ -22,8 +21,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 try:
-    from .triton_cast_silu import cast_silu
-    from .triton_geglu import try_geglu
+    from cryozeta.kernels.triton_cast_silu import cast_silu
+    from cryozeta.kernels.triton_geglu import try_geglu
 except ImportError:
     cast_silu = None
     try_geglu = None
@@ -48,7 +47,6 @@ class _NormSiLULayers(nn.Sequential):
             or x.dtype != torch.bfloat16
             or not 2**20 < x.numel() < 2**31
             or torch.cuda.get_device_capability(x.device)[0] < 8
-            or os.getenv("CRYOZETA_TRITON_CAST_SILU", "1") == "0"
         ):
             return super().forward(x)
 
