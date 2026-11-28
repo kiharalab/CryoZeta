@@ -303,6 +303,8 @@ def _cuequivariance_attn(
     v: torch.Tensor,
     bias: torch.Tensor,
     mask: torch.Tensor | None = None,
+    *,
+    use_fpf_k2b: bool = False,
 ) -> torch.Tensor:
     """Wrapper for cuEquivariance triangle_attention with shape handling."""
     qdim = len(q.shape)
@@ -325,7 +327,14 @@ def _cuequivariance_attn(
         if mask is not None:
             mask = mask.reshape(flat_batch_size, *mask.shape[-2:])
 
-    o = _cueq_triangle_attention(q=q, k=k, v=v, bias=bias.float(), mask=mask)
+    bias = bias.float()
+    o = None
+    if use_fpf_k2b:
+        from cryozeta.kernels.flashpairformer import try_k2b
+
+        o = try_k2b(q, k, v, bias, mask)
+    if o is None:
+        o = _cueq_triangle_attention(q=q, k=k, v=v, bias=bias, mask=mask)
 
     if qdim == 4:
         o = o.squeeze(0)
@@ -668,10 +677,30 @@ class Attention(nn.Module):
             apply_scale=not use_cuequivariance_attention,
         )
 
+        backend = "default"
+        if triangle_mask_is_raw and not (self.training or use_lma or use_flash):
+            backend = getattr(self, "inference_triangle_backend", "default")
+        if backend == "triton" and q.is_cuda and not torch.is_grad_enabled():
+            try:
+                from cryozeta.kernels.triton_triangle import try_triangle
+            except (ImportError, OSError):
+                pass
+            else:
+                scaled_q = q / math.sqrt(self.c_hidden) if use_cuequivariance_attention else q
+                mask_bias = triangle_mask_bias(biases[0], q_x, getattr(self, "inf", 1e9))
+                o = try_triangle(scaled_q, k, v, [mask_bias, biases[1]])
+                if o is not None:
+                    return self._wrap_up(o.transpose(-2, -3), q_x)
+
         if use_cuequivariance_attention:
             try:
                 # biases[0] = mask, biases[1] = triangle_bias
-                o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
+                if backend == "fpf_k2b":
+                    o = _cuequivariance_attn(
+                        q, k, v, biases[1], biases[0], use_fpf_k2b=True
+                    )
+                else:
+                    o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
             except (RuntimeError, TypeError, OSError):
                 # The native fallback applies the scale if the kernel fails.
                 q = q / math.sqrt(self.c_hidden)

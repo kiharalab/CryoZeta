@@ -169,19 +169,22 @@ class Transition(nn.Module):
                 and torch.cuda.get_device_capability(x.device) == (8, 6)
             )
             if can_fuse:
-                from cryozeta.kernels.triton_transition import try_fused_transition
-
-                fused = try_fused_transition(
-                    x,
-                    self.layernorm1.weight,
-                    self.layernorm1.bias,
-                    self.linear_no_bias_a.weight,
-                    self.linear_no_bias_b.weight,
-                    self.linear_no_bias.weight,
-                    self.layernorm1.eps,
-                )
-                if fused is not None:
-                    return fused.reshape(*other_dims, self.c_in)
+                try:
+                    from cryozeta.kernels.triton_transition import try_fused_transition
+                except (ImportError, OSError):
+                    pass
+                else:
+                    fused = try_fused_transition(
+                        x,
+                        self.layernorm1.weight,
+                        self.layernorm1.bias,
+                        self.linear_no_bias_a.weight,
+                        self.linear_no_bias_b.weight,
+                        self.linear_no_bias.weight,
+                        self.layernorm1.eps,
+                    )
+                    if fused is not None:
+                        return fused.reshape(*other_dims, self.c_in)
             chunk_count = 1 if size < 3200 else 8
             if use_bf16_chunks:
                 # Four row chunks preserve the measured cuBLAS arithmetic and

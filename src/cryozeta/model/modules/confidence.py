@@ -45,6 +45,7 @@ class ConfidenceHead(nn.Module):
         distance_bin_end: float = 21.375,
         distance_bin_step: float = 1.25,
         stop_gradient: bool = True,
+        use_triton_transition: bool = False,
     ) -> None:
         """
         Args:
@@ -98,8 +99,9 @@ class ConfidenceHead(nn.Module):
             dropout=pairformer_dropout,
             blocks_per_ckpt=blocks_per_ckpt,
         )
-        for block in self.pairformer_stack.blocks:
-            block.pair_transition.inference_hidden_budget_bytes = 1024**3
+        if use_triton_transition:
+            for block in self.pairformer_stack.blocks:
+                block.pair_transition.inference_hidden_budget_bytes = 1024**3
         self.linear_no_bias_pae = LinearNoBias(
             in_features=self.c_z, out_features=self.b_pae
         )

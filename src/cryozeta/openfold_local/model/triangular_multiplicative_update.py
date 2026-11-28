@@ -459,6 +459,19 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if (
+            use_cuequivariance_multiplicative_update
+            and getattr(self, "use_fpf_trimul", False)
+            and not self.training
+        ):
+            from cryozeta.kernels.flashpairformer import try_trimul
+
+            result = try_trimul(
+                self, z, mask, residual=inplace_safe and _add_with_inplace
+            )
+            if result is not None:
+                return result
+
         if use_cuequivariance_multiplicative_update and cuequivariance_is_installed:
             p_in_weight = torch.cat(
                 [self.linear_a_p.weight, self.linear_b_p.weight], dim=0

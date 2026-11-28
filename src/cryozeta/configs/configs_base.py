@@ -66,6 +66,9 @@ model_configs = {
         "sample_diffusion_chunk_size": ValueMaybeNone(1),
         "diffusion_pair_bias_cache_mib": 64,  # 0 disables the PyTorch attention cache
         "cache_diffusion_atom_conditioning": True,
+        "triangle_attention_backend": "default",
+        "use_fpf_trimul": False,
+        "use_triton_confidence_transition": False,
         "lddt_metrics_sparse_enable": GlobalConfigValue("loss_metrics_sparse_enable"),
         "lddt_metrics_chunk_size": ValueMaybeNone(1),
     },

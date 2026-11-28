@@ -33,6 +33,10 @@ from cryozeta.model.generator import (
 )
 from cryozeta.model.utils import simple_merge_dict_list
 from cryozeta.openfold_local.model.primitives import LayerNorm
+from cryozeta.openfold_local.model.triangular_attention import TriangleAttention
+from cryozeta.openfold_local.model.triangular_multiplicative_update import (
+    TriangleMultiplicativeUpdate,
+)
 from cryozeta.utils.torch_utils import autocasting_disable_decorator
 
 from .modules.confidence import ConfidenceHead
@@ -104,7 +108,24 @@ class CryoZeta(nn.Module):
             **configs.model.point_residue_class
         )
         self.point_noise_head = PointNoiseHead(**configs.model.point_noise)
-        self.confidence_head = ConfidenceHead(**configs.model.confidence_head)
+        self.confidence_head = ConfidenceHead(
+            **configs.model.confidence_head,
+            use_triton_transition=getattr(
+                configs.infer_setting, "use_triton_confidence_transition", False
+            ),
+        )
+        triangle_backend = getattr(
+            configs.infer_setting, "triangle_attention_backend", "default"
+        )
+        if triangle_backend not in {"default", "triton", "fpf_k2b"}:
+            raise ValueError(f"Unknown triangle attention backend: {triangle_backend}")
+        use_fpf_trimul = getattr(configs.infer_setting, "use_fpf_trimul", False)
+        if triangle_backend != "default" or use_fpf_trimul:
+            for module in self.modules():
+                if isinstance(module, TriangleAttention):
+                    module.mha.inference_triangle_backend = triangle_backend
+                elif isinstance(module, TriangleMultiplicativeUpdate):
+                    module.use_fpf_trimul = use_fpf_trimul
 
         self.c_s, self.c_z, self.c_s_inputs, self.c_pz, self.c_p = (
             configs.c_s,

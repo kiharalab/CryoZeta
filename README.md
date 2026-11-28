@@ -108,10 +108,10 @@ PyTorch scaled dot-product attention. Triangle attention still uses
 cuEquivariance when supported. In `cu11`, triangle attention, triangle
 multiplication and pair-biased transformer attention use the PyTorch paths.
 Triangle attention uses bounded PyTorch attention when cuEquivariance is
-ineligible or its kernel cannot run. The experimental streaming kernel is
-available as `cryozeta.kernels.triton_triangle.try_triangle` for direct
-benchmarks on SM80 and later with FP16 or BF16 inputs. Production inference
-keeps the PyTorch fallback, including on pre-Ampere GPUs in `cu11`.
+ineligible or its kernel cannot run. For opt-in pure Triton triangle attention,
+FlashPairformer K2B and TriMul v4, and FP32 Triton confidence Transition, see
+[optional inference kernels](docs/inference-kernels.md) for flags, hardware
+support, and measurements of numerical differences and fitting ranks.
 Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 

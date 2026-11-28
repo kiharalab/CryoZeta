@@ -318,6 +318,9 @@ def build_arg_str(
     n_sample: int,
     n_step: int,
     num_dl_workers: int,
+    triangle_attention_backend: str = "default",
+    use_fpf_trimul: str = "false",
+    use_triton_confidence_transition: str = "false",
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
@@ -327,6 +330,9 @@ def build_arg_str(
     parts += ["--use_cuequivariance_attention", str(use_cuequivariance_attention)]
     parts += ["--use_cuequivariance_multiplicative_update", str(use_cuequivariance_multiplicative_update)]
     parts += ["--use_cuequivariance_attention_pair_bias", str(use_cuequivariance_attention_pair_bias)]
+    parts += ["--infer_setting.triangle_attention_backend", triangle_attention_backend]
+    parts += ["--infer_setting.use_fpf_trimul", use_fpf_trimul]
+    parts += ["--infer_setting.use_triton_confidence_transition", use_triton_confidence_transition]
     parts += ["--model.N_cycle", str(n_cycle)]
     parts += ["--sample_diffusion.N_sample", str(n_sample)]
     parts += ["--sample_diffusion.N_step", str(n_step)]
@@ -360,6 +366,9 @@ def run_stage(
         n_sample=int(args.sample_N_sample),
         n_step=int(args.sample_N_step),
         num_dl_workers=int(args.num_dl_workers),
+        triangle_attention_backend=args.triangle_attention_backend,
+        use_fpf_trimul=args.use_fpf_trimul,
+        use_triton_confidence_transition=args.use_triton_confidence_transition,
     )
     configs = parse_configs(
         configs=configs,
@@ -669,6 +678,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--use_cuequivariance_attention", default="true")
     p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
     p.add_argument("--use_cuequivariance_attention_pair_bias", default="false")
+    p.add_argument(
+        "--infer_setting.triangle_attention_backend", dest="triangle_attention_backend",
+        choices=("default", "triton", "fpf_k2b"), default="default",
+    )
+    for name in ("use_fpf_trimul", "use_triton_confidence_transition"):
+        p.add_argument(f"--infer_setting.{name}", dest=name, choices=("true", "false"), default="false")
     p.add_argument("--num_dl_workers", type=int, default=1)
     p.add_argument("--crop.sample_index", dest="crop_sample_index", type=int, default=0)
 
