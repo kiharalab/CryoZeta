@@ -88,8 +88,6 @@ class MSAAttention(nn.Module):
         m: torch.Tensor,
         biases: list[torch.Tensor] | None,
         chunk_size: int,
-        use_memory_efficient_kernel: bool,
-        use_deepspeed_evo_attention: bool,
         use_lma: bool,
         use_flash: bool,
         flash_mask: torch.Tensor | None,
@@ -101,8 +99,6 @@ class MSAAttention(nn.Module):
                 q_x=m,
                 kv_x=m,
                 biases=biases,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=flash_mask,
@@ -241,7 +237,10 @@ class MSAAttention(nn.Module):
                 Size of chunks into which the inputs are split along their
                 batch dimensions. A low value decreases memory overhead at the
                 cost of slower execution. Chunking is not performed by default.
-
+            use_memory_efficient_kernel:
+                Legacy flag that disables automatic SDPA selection for MSA.
+            use_deepspeed_evo_attention:
+                Accepted for older callers.
         """
         if _chunk_logits is not None:
             return self._chunked_msa_attn(
@@ -304,8 +303,6 @@ class MSAAttention(nn.Module):
                 m,
                 biases,
                 chunk_size,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=mask,
@@ -317,8 +314,6 @@ class MSAAttention(nn.Module):
                 q_x=m,
                 kv_x=m,
                 biases=biases,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_flash=use_flash,
                 flash_mask=mask,
@@ -422,7 +417,6 @@ class MSAColumnAttention(nn.Module):
             m,
             mask=mask,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             use_flash=use_flash,
         )

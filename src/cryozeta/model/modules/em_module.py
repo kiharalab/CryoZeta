@@ -218,7 +218,6 @@ class PointColumnAttentionWithPairBias(nn.Module):
             z=p,
             mask=mask,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             use_flash=use_flash,
         )
@@ -456,7 +455,6 @@ class PairUpdate(nn.Module):
                     mask=pair_mask,
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
@@ -478,7 +476,6 @@ class PairUpdate(nn.Module):
                     mask=pair_mask.transpose(-1, -2),
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,

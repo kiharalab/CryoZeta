@@ -603,6 +603,7 @@ class Attention(nn.Module):
         use_flash: bool = False,
         flash_mask: torch.Tensor | None = None,
         use_sdpa: bool = False,
+        triangle_mask_is_raw: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -613,10 +614,7 @@ class Attention(nn.Module):
             biases:
                 List of biases that broadcast to [*, H, Q, K]
             use_memory_efficient_kernel:
-                Whether to use a custom memory-efficient attention kernel.
-                This should be the default choice for most. If none of the
-                "use_<...>" flags are True, a stock PyTorch implementation
-                is used instead
+                Accepted for older callers. Uses the selected attention backend.
             use_deepspeed_evo_attention:
                 Accepted for older callers. Native attention is used.
             use_cuequivariance_attention:
@@ -630,6 +628,8 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
+            triangle_mask_is_raw:
+                The first triangle bias is a keep mask. Convert it for PyTorch.
         Returns
             [*, Q, C_q] attention update
         """
@@ -645,35 +645,21 @@ class Attention(nn.Module):
                 "use flash_mask instead"
             )
 
-        attn_options = [
-            use_memory_efficient_kernel,
-            use_cuequivariance_attention,
-            use_lma,
-            use_flash,
-        ]
+        attn_options = [use_cuequivariance_attention, use_lma, use_flash]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
-        if use_cuequivariance_attention:
-            if biases is None or len(biases) != 2:
-                raise ValueError(
-                    "cuEquivariance attention requires exactly two bias terms"
-                )
-
+        triangle_mask_is_raw = triangle_mask_is_raw or use_cuequivariance_attention
+        if triangle_mask_is_raw and (biases is None or len(biases) != 2):
+            raise ValueError("Triangle attention requires exactly two bias terms")
         if biases is None:
             biases = []
 
-        triangle_fallback = hasattr(self, "inf")
-        # On unsupported shapes, honor the requested fallback backend.
-        if use_cuequivariance_attention:
-            if cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype):
-                # Convert raw mask back to inf-scaled for non-cueq paths
-                _inf = getattr(self, "inf", 1e9)
-                biases = [
-                    triangle_mask_bias(biases[0], q_x, _inf),
-                    biases[1],
-                ]
-                use_cuequivariance_attention = False
+        use_cuequivariance_attention = (
+            use_cuequivariance_attention
+            and q_x.is_cuda
+            and not cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype)
+        )
 
         # cuEquivariance applies scaling internally
         q, k, v = self._prep_qkv(
@@ -683,23 +669,21 @@ class Attention(nn.Module):
         )
 
         if use_cuequivariance_attention:
-            if not cueq_is_installed:
-                raise ValueError(
-                    "use_cuequivariance_attention is True but cuequivariance_torch is not installed"
-                )
             try:
                 # biases[0] = mask, biases[1] = triangle_bias
                 o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
             except (RuntimeError, TypeError, OSError):
-                # Triton compilation failure (e.g. missing ptxas); fall back
-                _inf = getattr(self, "inf", 1e9)
-                biases = [
-                    triangle_mask_bias(biases[0], q_x, _inf),
-                    biases[1],
-                ]
-                o = _bounded_attention(
-                    q / math.sqrt(self.c_hidden), k, v, biases
-                ).transpose(-2, -3)
+                # The native fallback applies the scale if the kernel fails.
+                q = q / math.sqrt(self.c_hidden)
+            else:
+                return self._wrap_up(o, q_x)
+
+        if triangle_mask_is_raw:
+            inf = getattr(self, "inf", 1e9)
+            biases = [triangle_mask_bias(biases[0], q_x, inf), biases[1]]
+
+        if use_cuequivariance_attention:
+            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         elif use_lma:
             biases = [
                 b.expand((*b.shape[:-2], q_x.shape[-2], kv_x.shape[-2])) for b in biases
@@ -715,7 +699,7 @@ class Attention(nn.Module):
         ):
             # _prep_qkv already scaled Q. Keep the pair bias broadcast across rows.
             o = _bounded_attention(q, k, v, biases, use_sdpa=True).transpose(-2, -3)
-        elif triangle_fallback:
+        elif hasattr(self, "inf"):
             o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
         else:
             o = _attention(q, k, v, biases)

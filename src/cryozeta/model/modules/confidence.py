@@ -160,7 +160,7 @@ class ConfidenceHead(nn.Module):
                 [..., N_token, N_token]
             x_pred_coords (torch.Tensor): predicted coordinates
                 [..., N_sample, N_atoms, 3]
-            use_memory_efficient_kernel (bool, optional): Whether to use memory-efficient kernel. Defaults to False.
+            use_memory_efficient_kernel (bool, optional): Legacy argument retained for compatibility.
             use_deepspeed_evo_attention (bool, optional): Legacy argument retained for compatibility.
             use_cuequivariance_attention (bool, optional): Whether to use cuEquivariance attention. Defaults to False.
             use_cuequivariance_multiplicative_update (bool, optional): Whether to use cuEquivariance multiplicative update. Defaults to False.
@@ -217,7 +217,6 @@ class ConfidenceHead(nn.Module):
                     pair_mask=pair_mask,
                     x_pred_rep_coords=x_pred_rep_coords[..., i, :, :],
                     use_memory_efficient_kernel=use_memory_efficient_kernel,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cuequivariance_attention=use_cuequivariance_attention,
                     use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
                     use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
@@ -301,7 +300,6 @@ class ConfidenceHead(nn.Module):
             z_pair,
             pair_mask,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cuequivariance_attention=use_cuequivariance_attention,
             use_cuequivariance_multiplicative_update=use_cuequivariance_multiplicative_update,
             use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
