@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import functools
-import os
 
 import torch
 import torch.nn.functional as F
@@ -266,8 +265,6 @@ def opm_tilelang(a, b, weight, bias, norm):
 
 
 def _use_reoriented_opm(a, b, weight, bias, norm, chunk_size):
-    if os.environ.get("CRYOZETA_OPM_REORIENTED") != "1":
-        return False
     if not (
         chunk_size == 16
         and a.shape == b.shape == (1980, 1980, 128)
@@ -301,22 +298,26 @@ def _opm_reoriented(a, b, weight, bias, norm):
     # Group contraction columns by hidden channel, then residue, so the
     # projection can consume the BF16 outer product without a layout copy.
     packed_b = b.permute(1, 2, 0).contiguous().view(1, s, h * n)
+    lhs = a.new_empty(1, chunk_size * h, s)
+    raw = a.new_empty(1, chunk_size * h, h * n)
+    outer_view = raw.view(chunk_size, h * h, n)
     out = a.new_empty(n, n, weight.shape[0])
     for start in range(0, n, chunk_size):
         end = min(start + chunk_size, n)
         if end - start < chunk_size:
             # cuBLAS can select a different projection reduction for tails.
-            del packed_b
+            del packed_b, lhs, raw, outer_view
             sequence_major_b = b.transpose(0, 1).contiguous()
             outer = torch.einsum("csh,snd->cnhd", a[start:end], sequence_major_b)
             out[start:end] = F.linear(outer.flatten(-2), weight, bias)
             del sequence_major_b, outer
             break
-        lhs = a[start:end].transpose(1, 2).contiguous().view(1, chunk_size * h, s)
-        outer = torch.bmm(lhs, packed_b).view(chunk_size, h * h, n)
-        projected = torch.baddbmm(bias[:, None], weight.expand(chunk_size, -1, -1), outer)
+        lhs.view(chunk_size, h, s).copy_(a[start:end].transpose(1, 2))
+        # The route requires BF16 operands because out= bypasses autocast.
+        torch.bmm(lhs, packed_b, out=raw)
+        projected = torch.baddbmm(bias[:, None], weight.expand(chunk_size, -1, -1), outer_view)
         out[start:end] = projected.transpose(1, 2)
-        del outer, projected
+        del projected
     out /= norm.view(1, 1)
     return out
 

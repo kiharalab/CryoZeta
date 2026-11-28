@@ -205,18 +205,14 @@ bash /path/to/CryoZeta/large_inference_demo.sh --example 9nb5
 
 This script runs detection, cycle prediction, and stage combination for the selected entry and writes outputs to `output/large_examples/`.
 
-Set `CRYOZETA_OPM_REORIENTED=1` to test the experimental cuBLAS OPM route for
-unmasked BF16 inference with 1980 residues, a reduction length of 1980, and
-128 hidden channels. It runs on the RTX A6000 with PyTorch `2.15.0+cu132`,
-CUDA BF16 autocast, and the default BF16 reduction setting. It keeps the
-original OPM path for the final 12 rows and for other configurations.
-On 9BH4, it preserved the exported results bit for bit and increased peak
-CUDA reserved memory by 1.29 GiB with the default allocator. Setting
-`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` alongside the OPM opt-in
-reduced the measured whole-run reserved peak from 35.38 GiB to 26.11 GiB on
-that workload with identical results. Features to export took 612.33 s with
-expandable segments, 609.30 s with the OPM opt-in alone, and 648.68 s on the
-baseline.
+The workspace-reusing cuBLAS OPM route runs automatically for unmasked BF16
+inference with 1980 residues, a reduction length of 1980, and 128 hidden
+channels on the RTX A6000 with PyTorch `2.15.0+cu132`, CUDA BF16 autocast, and
+cuBLAS with BF16 reduced-precision reduction enabled. The final 12 rows and
+other configurations use the original OPM path. For this workload,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` is an optional allocator
+setting. In the 9BH4 comparison with the preceding reoriented OPM path it
+reduced peak reserved memory from 35.38 GiB to 26.11 GiB with identical exports.
 
 ### Prepare Input JSON
 
