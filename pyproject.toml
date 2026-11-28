@@ -92,7 +92,6 @@ gcc = ">=13,<13.3"
 [tool.pixi.feature.cu12.pypi-dependencies]
 torch = { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.11.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" }
 torchvision = { url = "https://download-r2.pytorch.org/whl/cu128/torchvision-0.26.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" }
-cuequivariance-ops-torch-cu12 = ">=0.8.0"
 
 [tool.pixi.feature.cu12.system-requirements]
 cuda = "12.0"
@@ -108,7 +107,6 @@ gcc = ">=15,<16"
 [tool.pixi.feature.cu13.pypi-dependencies]
 torch = { url = "https://download-r2.pytorch.org/whl/cu132/torch-2.15.0%2Bcu132-cp312-cp312-manylinux_2_28_x86_64.whl" }
 torchvision = { url = "https://download-r2.pytorch.org/whl/cu132/torchvision-0.29.1%2Bcu132-cp312-cp312-manylinux_2_28_x86_64.whl" }
-cuequivariance-ops-torch-cu13 = ">=0.8.0"
 
 [tool.pixi.feature.cu13.system-requirements]
 cuda = "13.0"
@@ -149,7 +147,6 @@ shot-fpfh = { git = "https://github.com/aubin-tchoi/shot-fpfh" }
 open3d = ">=0.19.0"
 small-gicp = "<2.0"
 vesper = { git = "https://github.com/kiharalab/VESPER_CUDA.git", branch = "main" }
-cuequivariance-torch = ">=0.8.0"
 
 [tool.pixi.feature.dev.pypi-dependencies]
 prek = ">=0.3.2"

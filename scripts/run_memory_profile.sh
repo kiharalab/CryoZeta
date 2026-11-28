@@ -46,10 +46,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_cuequivariance=true
-use_cuequivariance_attention=${use_cuequivariance}
-use_cuequivariance_multiplicative_update=${use_cuequivariance}
-use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 input_json_path="assets/examples/example.json"
 
@@ -78,9 +74,6 @@ pixi run --frozen -e "${PIXI_ENV}" python scripts/profile_memory.py \
     --em_file_dir "${OUTPUT_DIR}" \
     --dump_dir "${OUTPUT_DIR}" \
     --input_json_path ${input_json_path} \
-    --use_cuequivariance_attention ${use_cuequivariance_attention} \
-    --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
-    --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
     --model.N_cycle ${N_cycle} \
     --sample_diffusion.N_sample ${N_sample} \
     --sample_diffusion.N_step ${N_step} \

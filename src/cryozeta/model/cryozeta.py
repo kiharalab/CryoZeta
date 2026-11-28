@@ -118,14 +118,12 @@ class CryoZeta(nn.Module):
             ),
         )
         triangle_backend = getattr(
-            configs.infer_setting, "triangle_attention_backend", "default"
+            configs.infer_setting, "triangle_attention_backend", "triton"
         )
         if triangle_backend not in {"default", "triton", "fpf_k2b"}:
             raise ValueError(f"Unknown triangle attention backend: {triangle_backend}")
         use_fpf_trimul = getattr(configs.infer_setting, "use_fpf_trimul", False)
-        use_biokernels_trimul = getattr(configs.infer_setting, "use_biokernels_trimul", False)
-        if use_fpf_trimul and use_biokernels_trimul:
-            raise ValueError("Select one optional triangle multiplication kernel")
+        use_biokernels_trimul = getattr(configs.infer_setting, "use_biokernels_trimul", True)
         chunk_budget_mib = getattr(
             configs.infer_setting, "transition_chunk_budget_mib", 0
         )
@@ -295,7 +293,6 @@ class CryoZeta(nn.Module):
                                 input_feature_dict,
                                 z,
                                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                                 use_lma=self.configs.use_lma,
                                 inplace_safe=inplace_safe,
                                 chunk_size=chunk_size,
@@ -307,8 +304,6 @@ class CryoZeta(nn.Module):
                             s_inputs,
                             pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                            use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
-                            use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
                             inplace_safe=inplace_safe,
                             chunk_size=chunk_size,
@@ -320,7 +315,6 @@ class CryoZeta(nn.Module):
                                 input_feature_dict,
                                 z,
                                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
                                 use_lma=self.configs.use_lma,
                                 inplace_safe=inplace_safe,
                                 chunk_size=chunk_size,
@@ -332,8 +326,6 @@ class CryoZeta(nn.Module):
                             s_inputs,
                             pair_mask=None,
                             use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                            use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
-                            use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
                             use_lma=self.configs.use_lma,
                             inplace_safe=inplace_safe,
                             chunk_size=chunk_size,
@@ -350,9 +342,6 @@ class CryoZeta(nn.Module):
                         p,
                         pair_mask=input_feature_dict["pair_mask"],
                         use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                        use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
-                        use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
-                        use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
                         use_lma=self.configs.use_lma,
                         inplace_safe=inplace_safe,
                         chunk_size=chunk_size,
@@ -594,7 +583,6 @@ class CryoZeta(nn.Module):
                 N_sample=N_sample,
                 noise_schedule=noise_schedule,
                 inplace_safe=inplace_safe,
-                use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
             )
 
         if not self.use_confidence_head:
@@ -803,9 +791,6 @@ class CryoZeta(nn.Module):
                 pair_mask=None,
                 x_pred_coords=pred_dict["coordinate"],
                 use_memory_efficient_kernel=self.configs.use_memory_efficient_kernel,
-                use_cuequivariance_attention=self.configs.use_cuequivariance_attention,
-                use_cuequivariance_multiplicative_update=self.configs.use_cuequivariance_multiplicative_update,
-                use_cuequivariance_attention_pair_bias=self.configs.use_cuequivariance_attention_pair_bias,
                 use_lma=self.configs.use_lma,
                 inplace_safe=inplace_safe,
                 chunk_size=chunk_size,

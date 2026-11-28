@@ -26,9 +26,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_cuequivariance_attention=true
-use_cuequivariance_multiplicative_update=true
-use_cuequivariance_attention_pair_bias=false
 overwrite=false
 checkpoint_path="assets/cryozeta-v0.0.1.safetensors"
 checkpoint_interpolation_path="assets/cryozeta-interpolate-v0.0.1.safetensors"
@@ -60,9 +57,6 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_cuequivariance_attention ${use_cuequivariance_attention} \
-        --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
-        --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \
@@ -78,9 +72,6 @@ run_example() {
         --em_file_dir ${dump_dir} \
         --dump_dir ${dump_dir} \
         --input_json_path ${input_json_path} \
-        --use_cuequivariance_attention ${use_cuequivariance_attention} \
-        --use_cuequivariance_multiplicative_update ${use_cuequivariance_multiplicative_update} \
-        --use_cuequivariance_attention_pair_bias ${use_cuequivariance_attention_pair_bias} \
         --model.N_cycle ${N_cycle} \
         --sample_diffusion.N_sample ${N_sample} \
         --sample_diffusion.N_step ${N_step} \

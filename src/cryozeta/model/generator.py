@@ -98,7 +98,6 @@ def sample_diffusion(
     diffusion_chunk_size: int | None = None,
     inplace_safe: bool = False,
     attn_chunk_size: int | None = None,
-    use_cuequivariance_attention_pair_bias: bool = False,
     pair_bias_cache_mib: int = 0,
     cache_atom_conditioning: bool = False,
 ) -> torch.Tensor:
@@ -152,7 +151,6 @@ def sample_diffusion(
             biases = denoise_net.diffusion_transformer.prepare_pair_bias_cache(
                 cached_pair_z,
                 pair_bias_cache_mib * 2**20,
-                use_cuequivariance_attention_pair_bias,
             )
             if biases:
                 denoise_options["cached_pair_biases"] = biases
@@ -212,7 +210,6 @@ def sample_diffusion(
                 z_trunk=z_trunk,
                 chunk_size=attn_chunk_size,
                 inplace_safe=inplace_safe,
-                use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
                 cached_pair_z=cached_pair_z,
                 **denoise_options,
             )

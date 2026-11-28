@@ -104,14 +104,16 @@ The auto-detection logic combines both:
 | < 8.0 (Volta / Turing / older) | >= 11.8 | `cu11` | 11.8 | 2.7.1 | 3.3.1 |
 
 The demo uses PyTorch LayerNorm and, for unmasked point–residue attention,
-PyTorch scaled dot-product attention. Triangle attention still uses
-cuEquivariance when supported. In `cu11`, triangle attention, triangle
-multiplication and pair-biased transformer attention use the PyTorch paths.
-Triangle attention uses bounded PyTorch attention when cuEquivariance is
-ineligible or its kernel cannot run. For opt-in pure Triton triangle attention,
-FlashPairformer K2B and TriMul v4, and FP32 Triton confidence Transition, see
-[optional inference kernels](docs/inference-kernels.md) for flags, hardware
-support, and measurements of numerical differences and fitting ranks.
+PyTorch scaled dot-product attention. Inference defaults to pure Triton
+triangle attention and BioKernels triangle multiplication on their supported
+CUDA configurations. Unsupported calls use bounded PyTorch triangle attention
+and native PyTorch triangle multiplication. Pair-bias attention uses PyTorch.
+cuEquivariance was removed from all environments. Remove the three
+`--use_cuequivariance_*` options from existing commands.
+
+See [inference kernels and baselines](docs/inference-kernels.md) for the
+native PyTorch reference flags, hardware support, and measurements of numerical
+differences and fitting ranks.
 Older launchers can still pass
 `--use_deepspeed_evo_attention`; inference uses the native backend.
 

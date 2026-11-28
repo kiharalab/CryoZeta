@@ -1,4 +1,4 @@
-"""Benchmark native and cuEquivariance triangle attention with matched inputs."""
+"""Benchmark PyTorch and Triton triangle attention with matched inputs."""
 
 import argparse
 import json
@@ -97,10 +97,6 @@ def main(argv=None):
         torch.autocast("cuda", dtype=dtype),
     ):
         module, channels, width = load_module(args.checkpoint, args.module, device)
-        if primitives.cueq_would_fall_back(args.length, width, dtype):
-            parser.error(
-                "cuEquivariance would fall back for this dtype, length, or installation"
-            )
         generator = torch.Generator(device=device).manual_seed(args.seed)
         x = torch.randn(
             args.length,
@@ -124,13 +120,16 @@ def main(argv=None):
         additive_mask = (mask - 1) * module.inf
         del x, module
         scaled = q / math.sqrt(width)
+        biases = [additive_mask, bias]
+        from cryozeta.kernels.triton_triangle import try_triangle
+
+        if try_triangle(scaled, k, v, biases) is None:
+            parser.error(
+                "Triton triangle attention does not support this input or CUDA stack"
+            )
         routes = {
-            "pytorch": lambda: primitives._attention(
-                scaled, k, v, [additive_mask, bias]
-            ),
-            "cueq": lambda: primitives._cuequivariance_attn(
-                q, k, v, bias, mask
-            ).transpose(-2, -3),
+            "pytorch": lambda: primitives._bounded_attention(scaled, k, v, biases),
+            "triton": lambda: try_triangle(scaled, k, v, biases),
         }
         timings = measure(routes, device, args.warmup, args.repeats)
         ref, cand = (fn() for fn in routes.values())
@@ -149,7 +148,7 @@ def main(argv=None):
             "warmup": args.warmup,
             "repeats": args.repeats,
             "backends": timings,
-            "cueq_vs_pytorch": {
+            "triton_vs_pytorch": {
                 "max_abs": delta.abs().max().item(),
                 "relative_l2": (
                     delta.norm() / ref.float().norm().clamp_min(1e-30)

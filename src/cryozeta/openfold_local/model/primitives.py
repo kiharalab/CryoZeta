@@ -19,16 +19,6 @@ from collections.abc import Callable
 
 import numpy as np
 
-cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
-if cueq_is_installed:
-    try:
-        from cuequivariance_ops_torch.triangle_attention import (
-            CUEQ_TRIATTN_FALLBACK_THRESHOLD,
-        )
-        from cuequivariance_torch import triangle_attention as _cueq_triangle_attention
-    except (ImportError, OSError, RuntimeError):
-        cueq_is_installed = False
-
 fa_is_installed = importlib.util.find_spec("flash_attn") is not None
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
@@ -278,68 +268,6 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
         s = torch.nn.functional.softmax(t, dim=dim)
 
     return s
-
-
-def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype) -> bool:
-    """Check if cuEquivariance triangle_attention would fall back for given params."""
-    if not cueq_is_installed:
-        return True
-    threshold = max(CUEQ_TRIATTN_FALLBACK_THRESHOLD, 200 if hidden_dim < 32 else 0)
-    if n_token <= threshold:
-        return True
-    if dtype == torch.float32:
-        if hidden_dim > 32 or hidden_dim % 4 != 0:
-            return True
-    else:
-        if hidden_dim > 128 or hidden_dim % 8 != 0:
-            return True
-    return False
-
-
-@torch.jit.ignore
-def _cuequivariance_attn(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    bias: torch.Tensor,
-    mask: torch.Tensor | None = None,
-    *,
-    use_fpf_k2b: bool = False,
-) -> torch.Tensor:
-    """Wrapper for cuEquivariance triangle_attention with shape handling."""
-    qdim = len(q.shape)
-    if qdim == 4:
-        q = q.unsqueeze(0)
-        k = k.unsqueeze(0)
-        v = v.unsqueeze(0)
-        bias = bias.unsqueeze(0)
-        if mask is not None:
-            mask = mask.unsqueeze(0)
-    elif len(q.shape[:-3]) > 2:
-        batch_shape = q.shape[:-3]
-        flat_batch_size = 1
-        for dim in batch_shape:
-            flat_batch_size *= dim
-        q = q.reshape(flat_batch_size, *q.shape[-3:])
-        k = k.reshape(flat_batch_size, *k.shape[-3:])
-        v = v.reshape(flat_batch_size, *v.shape[-3:])
-        bias = bias.reshape(flat_batch_size, *bias.shape[-3:])
-        if mask is not None:
-            mask = mask.reshape(flat_batch_size, *mask.shape[-2:])
-
-    bias = bias.float()
-    o = None
-    if use_fpf_k2b:
-        from cryozeta.kernels.flashpairformer import try_k2b
-
-        o = try_k2b(q, k, v, bias, mask)
-    if o is None:
-        o = _cueq_triangle_attention(q=q, k=k, v=v, bias=bias, mask=mask)
-
-    if qdim == 4:
-        o = o.squeeze(0)
-    o = o.transpose(-2, -3)
-    return o
 
 
 # @torch.jit.script
@@ -605,7 +533,6 @@ class Attention(nn.Module):
         biases: list[torch.Tensor] | None = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
-        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -626,9 +553,6 @@ class Attention(nn.Module):
                 Accepted for older callers. Uses the selected attention backend.
             use_deepspeed_evo_attention:
                 Accepted for older callers. Native attention is used.
-            use_cuequivariance_attention:
-                Whether to use cuEquivariance triangle attention kernel.
-                Uses bounded PyTorch attention for unsupported shapes.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -654,66 +578,46 @@ class Attention(nn.Module):
                 "use flash_mask instead"
             )
 
-        attn_options = [use_cuequivariance_attention, use_lma, use_flash]
-        if sum(attn_options) > 1:
+        if use_lma and use_flash:
             raise ValueError("Choose at most one alternative attention algorithm")
 
-        triangle_mask_is_raw = triangle_mask_is_raw or use_cuequivariance_attention
         if triangle_mask_is_raw and (biases is None or len(biases) != 2):
             raise ValueError("Triangle attention requires exactly two bias terms")
         if biases is None:
             biases = []
 
-        use_cuequivariance_attention = (
-            use_cuequivariance_attention
-            and q_x.is_cuda
-            and not cueq_would_fall_back(q_x.shape[-2], self.c_hidden, q_x.dtype)
-        )
-
-        # cuEquivariance applies scaling internally
-        q, k, v = self._prep_qkv(
-            q_x,
-            kv_x,
-            apply_scale=not use_cuequivariance_attention,
-        )
-
         backend = "default"
-        if triangle_mask_is_raw and not (self.training or use_lma or use_flash):
+        if (
+            triangle_mask_is_raw
+            and not (self.training or use_lma or use_flash or torch.is_grad_enabled())
+            and q_x.is_cuda
+        ):
             backend = getattr(self, "inference_triangle_backend", "default")
-        if backend == "triton" and q.is_cuda and not torch.is_grad_enabled():
+        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=backend != "fpf_k2b")
+
+        if backend == "fpf_k2b":
+            from cryozeta.kernels.flashpairformer import try_k2b
+
+            o = try_k2b(q, k, v, biases[1], biases[0])
+            if o is not None:
+                return self._wrap_up(o.transpose(-2, -3), q_x)
+            q /= math.sqrt(self.c_hidden)
+
+        if triangle_mask_is_raw:
+            mask_bias = triangle_mask_bias(biases[0], q_x, getattr(self, "inf", 1e9))
+            biases = [mask_bias, biases[1]]
+
+        if backend == "triton":
             try:
                 from cryozeta.kernels.triton_triangle import try_triangle
             except (ImportError, OSError):
                 pass
             else:
-                scaled_q = q / math.sqrt(self.c_hidden) if use_cuequivariance_attention else q
-                mask_bias = triangle_mask_bias(biases[0], q_x, getattr(self, "inf", 1e9))
-                o = try_triangle(scaled_q, k, v, [mask_bias, biases[1]])
+                o = try_triangle(q, k, v, biases)
                 if o is not None:
                     return self._wrap_up(o.transpose(-2, -3), q_x)
 
-        if use_cuequivariance_attention:
-            try:
-                # biases[0] = mask, biases[1] = triangle_bias
-                if backend == "fpf_k2b":
-                    o = _cuequivariance_attn(
-                        q, k, v, biases[1], biases[0], use_fpf_k2b=True
-                    )
-                else:
-                    o = _cuequivariance_attn(q, k, v, biases[1], biases[0])
-            except (RuntimeError, TypeError, OSError):
-                # The native fallback applies the scale if the kernel fails.
-                q = q / math.sqrt(self.c_hidden)
-            else:
-                return self._wrap_up(o, q_x)
-
-        if triangle_mask_is_raw:
-            inf = getattr(self, "inf", 1e9)
-            biases = [triangle_mask_bias(biases[0], q_x, inf), biases[1]]
-
-        if use_cuequivariance_attention:
-            o = _bounded_attention(q, k, v, biases).transpose(-2, -3)
-        elif use_lma:
+        if use_lma:
             biases = [
                 b.expand((*b.shape[:-2], q_x.shape[-2], kv_x.shape[-2])) for b in biases
             ]

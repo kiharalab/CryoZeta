@@ -414,7 +414,6 @@ class DiffusionModule(nn.Module):
         z_trunk: torch.Tensor,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
-        use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
         cached_pair_biases: tuple[torch.Tensor, ...] = (),
         cached_atom_conditioning: AtomConditioning | None = None,
@@ -530,7 +529,6 @@ class DiffusionModule(nn.Module):
             cached_pair_biases=cached_pair_biases,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
-            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
         )
 
         a_token = self.layernorm_a(a_token)
@@ -572,7 +570,6 @@ class DiffusionModule(nn.Module):
         z_trunk: torch.Tensor,
         inplace_safe: bool = False,
         chunk_size: int | None = None,
-        use_cuequivariance_attention_pair_bias: bool = False,
         cached_pair_z: torch.Tensor | None = None,
         cached_pair_biases: tuple[torch.Tensor, ...] = (),
         cached_atom_conditioning: AtomConditioning | None = None,
@@ -621,7 +618,6 @@ class DiffusionModule(nn.Module):
             z_trunk=z_trunk,
             inplace_safe=inplace_safe,
             chunk_size=chunk_size,
-            use_cuequivariance_attention_pair_bias=use_cuequivariance_attention_pair_bias,
             cached_pair_z=cached_pair_z,
             cached_pair_biases=cached_pair_biases,
             cached_atom_conditioning=cached_atom_conditioning,

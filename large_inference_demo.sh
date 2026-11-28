@@ -163,10 +163,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_cuequivariance=true  # Master toggle for all cuEquivariance modules
-use_cuequivariance_attention=${use_cuequivariance}
-use_cuequivariance_multiplicative_update=${use_cuequivariance}
-use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 checkpoint_path="${cli_checkpoint:-${ASSETS_DIR}/cryozeta-v0.0.1.safetensors}"
 detection_checkpoint_path="${cli_detection_checkpoint:-${ASSETS_DIR}/cryozeta-detection-v0.0.1.safetensors}"
 
@@ -310,9 +306,6 @@ CUDA_VISIBLE_DEVICES=${gpu_ids} "${PIXI_RUN[@]}" cryozeta-cycle-predict \
     --sample.N_step "${N_step}" \
     --model.N_cycle "${N_cycle}" \
     --max_residues_per_stage "${max_residues_per_stage}" \
-    --use_cuequivariance_attention "${use_cuequivariance_attention}" \
-    --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
-    --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
     --num_dl_workers 1 \
     ${registration_flag}
 

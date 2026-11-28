@@ -154,10 +154,6 @@ N_sample=5
 N_step=20
 N_cycle=10
 seed=101
-use_cuequivariance=true  # Master toggle for all cuEquivariance modules
-use_cuequivariance_attention=${use_cuequivariance}
-use_cuequivariance_multiplicative_update=${use_cuequivariance}
-use_cuequivariance_attention_pair_bias=${use_cuequivariance}
 mode="${cli_mode:-combined}"  # cryozeta, cryozeta-interpolate, or combined
 overwrite="${cli_overwrite}"
 use_mask_filter="${cli_mask_filter}"
@@ -222,9 +218,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta" ]; then
     --em_file_dir "${dump_dir}" \
     --dump_dir "${dump_dir}" \
     --input_json_path "${input_json_path}" \
-    --use_cuequivariance_attention "${use_cuequivariance_attention}" \
-    --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
-    --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
     --model.N_cycle "${N_cycle}" \
     --sample_diffusion.N_sample "${N_sample}" \
     --sample_diffusion.N_step "${N_step}" \
@@ -242,9 +235,6 @@ if [ "$mode" = "combined" ] || [ "$mode" = "cryozeta-interpolate" ]; then
     --dump_dir "${dump_dir}" \
     --em_file_dir "${dump_dir}" \
     --input_json_path "${input_json_path}" \
-    --use_cuequivariance_attention "${use_cuequivariance_attention}" \
-    --use_cuequivariance_multiplicative_update "${use_cuequivariance_multiplicative_update}" \
-    --use_cuequivariance_attention_pair_bias "${use_cuequivariance_attention_pair_bias}" \
     --model.N_cycle "${N_cycle}" \
     --sample_diffusion.N_sample "${N_sample}" \
     --sample_diffusion.N_step "${N_step}" \

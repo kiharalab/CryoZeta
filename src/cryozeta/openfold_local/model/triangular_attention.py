@@ -59,7 +59,6 @@ class TriangleAttention(nn.Module):
         x: torch.Tensor,
         biases: list[torch.Tensor],
         chunk_size: int,
-        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -73,7 +72,6 @@ class TriangleAttention(nn.Module):
             partial(
                 self.mha,
                 triangle_mask_is_raw=True,
-                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
             ),
             mha_inputs,
@@ -89,7 +87,6 @@ class TriangleAttention(nn.Module):
         chunk_size: int | None = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
-        use_cuequivariance_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -129,7 +126,6 @@ class TriangleAttention(nn.Module):
                 x,
                 biases,
                 chunk_size,
-                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
             )
@@ -139,7 +135,6 @@ class TriangleAttention(nn.Module):
                 kv_x=x,
                 biases=biases,
                 triangle_mask_is_raw=True,
-                use_cuequivariance_attention=use_cuequivariance_attention,
                 use_lma=use_lma,
             )
 

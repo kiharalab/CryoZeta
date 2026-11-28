@@ -25,15 +25,22 @@ def _warn_fallback(kernel, reason):
 
 
 def try_k2b(q, k, v, bias, mask):
-    if q.shape[-3:] != (4, 1980, 32) or not _qualified(q):
+    if q.ndim not in (4, 5) or q.shape[-3:] != (4, 1980, 32) or not _qualified(q):
         return None
+    unbatched = q.ndim == 4
+    if unbatched:
+        q, k, v, bias = (tensor.unsqueeze(0) for tensor in (q, k, v, bias))
+        if mask is not None:
+            mask = mask.unsqueeze(0)
     try:
         from cryozeta.third_party.fpf.opt_core.kernels.fpf_triatt_k2b import triatt_k2b
 
         mask = None if mask is None else mask.bool()
+        bias = bias.float()
         supported, reason = triatt_k2b.flash_supported(q, k, v, bias, mask)
         if supported:
-            return triatt_k2b.flash_triangle_attention(q, k, v, bias, mask)
+            result = triatt_k2b.flash_triangle_attention(q, k, v, bias, mask)
+            return result.squeeze(0) if unbatched else result
         _warn_fallback("FlashPairformer K2B", reason)
     except (ImportError, OSError, RuntimeError, TypeError) as exc:
         _warn_fallback("FlashPairformer K2B", str(exc))

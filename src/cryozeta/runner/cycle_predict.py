@@ -311,34 +311,22 @@ def build_arg_str(
     checkpoint: Path,
     dump_dir: Path,
     input_json: Path,
-    use_cuequivariance_attention: str,
-    use_cuequivariance_multiplicative_update: str,
-    use_cuequivariance_attention_pair_bias: str,
     n_cycle: int,
     n_sample: int,
     n_step: int,
     num_dl_workers: int,
-    triangle_attention_backend: str = "default",
+    triangle_attention_backend: str = "triton",
     use_fpf_trimul: str = "false",
     use_triton_confidence_transition: str = "false",
     use_confidence_head: str = "false",
     transition_chunk_budget_mib: int = 0,
-    use_biokernels_trimul: str = "false",
+    use_biokernels_trimul: str = "true",
 ) -> str:
     parts: list[str] = []
     parts += ["--seeds", str(seeds)]
     parts += ["--load_checkpoint_path", str(checkpoint)]
     parts += ["--dump_dir", str(dump_dir)]
     parts += ["--input_json_path", str(input_json)]
-    parts += ["--use_cuequivariance_attention", str(use_cuequivariance_attention)]
-    parts += [
-        "--use_cuequivariance_multiplicative_update",
-        str(use_cuequivariance_multiplicative_update),
-    ]
-    parts += [
-        "--use_cuequivariance_attention_pair_bias",
-        str(use_cuequivariance_attention_pair_bias),
-    ]
     parts += ["--infer_setting.triangle_attention_backend", triangle_attention_backend]
     parts += ["--infer_setting.use_fpf_trimul", use_fpf_trimul]
     parts += ["--infer_setting.use_biokernels_trimul", use_biokernels_trimul]
@@ -377,13 +365,6 @@ def run_stage(
         checkpoint=Path(args.load_checkpoint_path).expanduser().resolve(),
         dump_dir=dump_dir,
         input_json=temp_json,
-        use_cuequivariance_attention=str(args.use_cuequivariance_attention).lower(),
-        use_cuequivariance_multiplicative_update=str(
-            args.use_cuequivariance_multiplicative_update
-        ).lower(),
-        use_cuequivariance_attention_pair_bias=str(
-            args.use_cuequivariance_attention_pair_bias
-        ).lower(),
         n_cycle=int(args.model_N_cycle),
         n_sample=int(args.sample_N_sample),
         n_step=int(args.sample_N_step),
@@ -700,14 +681,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument("--use_deepspeed_evo_attention", default="false")
-    p.add_argument("--use_cuequivariance_attention", default="true")
-    p.add_argument("--use_cuequivariance_multiplicative_update", default="true")
-    p.add_argument("--use_cuequivariance_attention_pair_bias", default="false")
     p.add_argument(
         "--infer_setting.triangle_attention_backend",
         dest="triangle_attention_backend",
         choices=("default", "triton", "fpf_k2b"),
-        default="default",
+        default="triton",
     )
     p.add_argument(
         "--infer_setting.transition_chunk_budget_mib",
@@ -725,7 +703,7 @@ def parse_args() -> argparse.Namespace:
             f"--infer_setting.{name}",
             dest=name,
             choices=("true", "false"),
-            default="false",
+            default="true" if name == "use_biokernels_trimul" else "false",
         )
     p.add_argument("--num_dl_workers", type=int, default=1)
     p.add_argument("--crop.sample_index", dest="crop_sample_index", type=int, default=0)

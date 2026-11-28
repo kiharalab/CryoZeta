@@ -3,7 +3,6 @@ import torch
 
 from cryozeta.kernels import flashpairformer
 from cryozeta.model.modules.confidence import ConfidenceHead
-from cryozeta.openfold_local.model import primitives
 from cryozeta.openfold_local.model.triangular_attention import TriangleAttention
 from cryozeta.openfold_local.model.triangular_multiplicative_update import (
     TriangleMultiplicationIncoming,
@@ -17,33 +16,42 @@ def test_experimental_attention_preserves_cpu_fallback(backend):
     x = torch.randn(5, 5, 8)
     with torch.no_grad():
         layer.mha.linear_o.weight.normal_()
-        expected = layer(x, chunk_size=2, use_cuequivariance_attention=True)
+        expected = layer(x, chunk_size=2)
         layer.mha.inference_triangle_backend = backend
-        actual = layer(x, chunk_size=2, use_cuequivariance_attention=True)
+        actual = layer(x, chunk_size=2)
     assert torch.equal(actual, expected)
 
 
 @pytest.mark.parametrize("decline", [True, False])
-def test_k2b_can_replace_cuequivariance_on_the_requested_path(monkeypatch, decline):
+def test_k2b_dispatches_with_raw_mask_and_scales_pytorch_fallback(monkeypatch, decline):
+    layer = TriangleAttention(8, 4, 2).eval()
+    x = torch.randn(5, 5, 8)
+    mask = torch.rand(5, 5) > 0.3
     calls = []
 
-    def k2b(q, k, v, bias, mask):
-        calls.append("k2b")
-        assert q.ndim == 5 and bias.dtype == torch.float32
+    def k2b(q, k, v, bias, keep):
+        calls.append(True)
+        assert torch.equal(keep, mask[..., :, None, None, :])
+        assert torch.equal(q, unscaled_q)
         return None if decline else v
 
-    def cueq(*, q, k, v, bias, mask):
-        calls.append("cueq")
-        return v
-
     monkeypatch.setattr(flashpairformer, "try_k2b", k2b)
-    monkeypatch.setattr(primitives, "_cueq_triangle_attention", cueq, raising=False)
-    q, k, v = [torch.randn(3, 2, 5, 4) for _ in range(3)]
-    bias = torch.randn(1, 2, 5, 5, dtype=torch.bfloat16)
-    mask = torch.ones(3, 1, 1, 5, dtype=torch.bool)
-    actual = primitives._cuequivariance_attn(q, k, v, bias, mask, use_fpf_k2b=True)
-    assert torch.equal(actual, v.transpose(-2, -3))
-    assert calls == (["k2b", "cueq"] if decline else ["k2b"])
+    with torch.no_grad():
+        layer.mha.linear_o.weight.normal_()
+        normalized = layer.layer_norm(x)
+        unscaled_q, _, v = layer.mha._prep_qkv(
+            normalized, normalized, apply_scale=False
+        )
+        expected = (
+            layer(x, mask)
+            if decline
+            else layer.mha._wrap_up(v.transpose(-2, -3), normalized)
+        )
+        monkeypatch.setattr(torch.Tensor, "is_cuda", property(lambda self: True))
+        layer.mha.inference_triangle_backend = "fpf_k2b"
+        actual = layer(x, mask)
+    assert calls == [True]
+    assert torch.equal(actual, expected)
 
 
 def test_fpf_trimul_receives_residual_mode(monkeypatch):
@@ -62,7 +70,6 @@ def test_fpf_trimul_receives_residual_mode(monkeypatch):
         mask,
         inplace_safe=True,
         _add_with_inplace=True,
-        use_cuequivariance_multiplicative_update=True,
     )
     assert torch.equal(actual, z + 1)
 
