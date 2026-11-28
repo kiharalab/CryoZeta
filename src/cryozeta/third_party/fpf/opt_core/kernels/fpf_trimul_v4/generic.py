@@ -24,6 +24,7 @@ i.e. z of >= 512 GiB at C = 128; 'grid_batch>65535' = CUDA grid axis 2) is serve
 (COUNTS["batch_loop_fallback"][name] and one printed line), never a launch with a truncated coordinate; kernels.trimul_v4_forward itself refuses such a batch by name
 (kernels.BatchLimit) before allocating anything.
 The module-signature provider `fpf_trimul_v4.trimul:fn` is a thin wrapper over `trimul_packed` (byte-identical outputs to calling it directly)."""
+import math
 import atexit, os, sys, json, torch
 from . import __version__
 from . import kernels as K
@@ -250,6 +251,10 @@ def _report():
 atexit.register(_report)
 
 
+def _probe_passes(ratio_max, ratio_rms):
+    return 0.0 <= ratio_max <= SAME_CLASS_MAX and 0.0 <= ratio_rms <= SAME_CLASS_RMS
+
+
 def probe(device, C, D, has_bias, in_f32):
     """The warm numerics probe of one shape class (C, D, bias, input dtype) on ``device``, ONCE per process: the served kernels on a random [n, n, C] pair tensor for
     every n of :func:`probe_sizes` (outgoing and incoming) against an fp64 statement of the same math (:func:`reference_torch`), beside the bf16-autocast torch statement's own error; the
@@ -275,10 +280,10 @@ def probe(device, C, D, has_bias, in_f32):
     except _STAMP_ERRORS + (AssertionError, LookupError):                                  # the stamp machinery can never fail a probe (its own functions already return None)
         facts, st = None, None
     if st is not None:                                                                     # this exact (package, class, sizes, cell, bars, device, stack) PASSED the probe before:
-        rec = dict(st.get("record") or {})                                                # the verdict is taken from the stamp, nothing is allocated
+        rec = st["record"]
         line = "warm probe (C=%d, D=%d, %s, %s in; N=%s) %s: verdict stamped earlier on this stack / device (%s) -> served" % (
             C, D, "bias" if has_bias else "no bias", "fp32" if in_f32 else "bf16", "+".join(str(n) for n in sizes), CELLS.cell_word(device), st.get("_path", "-"))
-        _PROBES[key] = {"ok": True, "ratio_max": float(rec.get("ratio_max", 0.0)), "ratio_rms": float(rec.get("ratio_rms", 0.0)), "cell": CELLS.cell_word(device), "line": line, "stamp": "hit"}
+        _PROBES[key] = {"ok": True, "ratio_max": float(rec["ratio_max"]), "ratio_rms": float(rec["ratio_rms"]), "cell": CELLS.cell_word(device), "line": line, "stamp": "hit"}
         COUNTS["probe"]["%s C%d D%d %s %s" % (key[0], C, D, "bias" if has_bias else "nobias", "f32" if in_f32 else "bf16")] = {"ok": True, "stamp": "hit"}
         _PROBE_MEM["stamp_hits"] += 1
         _log(line)
@@ -303,14 +308,17 @@ def probe(device, C, D, has_bias, in_f32):
                         cls = reference_torch(z, None, direction="outgoing" if outgoing else "incoming", dtype=torch.float32, **raw)   # realization is what the bar is relative to)
                     stt = probe_error_stats(served, cls, z, None, direction="outgoing" if outgoing else "incoming", raw=raw)
                     del cls
-                    worst["max"] = max(worst["max"], stt["max_s"] / max(stt["max_c"], 1e-30))
-                    worst["rms"] = max(worst["rms"], (stt["ss_s"] / stt["count"]) ** 0.5 / max((stt["ss_c"] / stt["count"]) ** 0.5, 1e-30))
+                    if all(math.isfinite(value) for value in stt.values()):
+                        worst["max"] = max(worst["max"], stt["max_s"] / max(stt["max_c"], 1e-30))
+                        worst["rms"] = max(worst["rms"], (stt["ss_s"] / stt["count"]) ** 0.5 / max((stt["ss_c"] / stt["count"]) ** 0.5, 1e-30))
+                    else:
+                        worst["max"] = worst["rms"] = math.inf
                     del served
                 del z
     finally:
         del w, raw
         release_probe_memory()                                                             # nothing the probe allocated is referenced or reserved afterwards
-    ok = worst["rms"] <= SAME_CLASS_RMS and worst["max"] <= SAME_CLASS_MAX
+    ok = _probe_passes(worst["max"], worst["rms"])
     shape = "C=%d, D=%d, %s, %s in" % (C, D, "bias" if has_bias else "no bias", "fp32" if in_f32 else "bf16")
     line = ("warm probe (%s; N=%s out+in) %s: err vs fp64 = %.2fx rms / %.2fx max of the bf16-autocast statement's (same class: rms <= %.2fx, max <= %.1fx) -> %s"
             % (shape, "+".join(str(n) for n in sizes), CELLS.cell_word(device), worst["rms"], worst["max"], SAME_CLASS_RMS, SAME_CLASS_MAX, "served" if ok else "REFUSED: the lever cannot run for this shape class (probe-failed)"))
@@ -406,7 +414,9 @@ def probe_error_stats(served, cls, z, mask, *, direction, raw, chunk_bytes=PROBE
     for I, J, r64 in reference_torch_blocks(z, mask, direction=direction, dtype=torch.float64, block_rows=rows, **raw):
         e_s = served[I][:, J].double() - r64
         e_c = cls[I][:, J].double() - r64
-        out["max_s"] = max(out["max_s"], float(e_s.abs().max())); out["max_c"] = max(out["max_c"], float(e_c.abs().max()))
+        max_s, max_c = float(e_s.abs().max()), float(e_c.abs().max())
+        out["max_s"] = max(out["max_s"], max_s) if math.isfinite(max_s) else math.inf
+        out["max_c"] = max(out["max_c"], max_c) if math.isfinite(max_c) else math.inf
         out["ss_s"] += float(e_s.pow(2).sum(dtype=torch.float64)); out["ss_c"] += float(e_c.pow(2).sum(dtype=torch.float64))
         out["count"] += int(e_s.numel())
         del e_s, e_c, r64
@@ -483,7 +493,10 @@ def probe_stamp_read(facts):
             return None
         for kind, d in NV.stamp_dirs(leaf=PROBE_STAMP_LEAF):
             st = NV.stamp_read(d, facts)
-            if st is not None:
+            if st is None:
+                continue
+            record = st.get("record") or {}
+            if record.get("ok") is True and _probe_passes(record["ratio_max"], record["ratio_rms"]):
                 st["_kind"] = kind
                 return st
     except _STAMP_ERRORS:

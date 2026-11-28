@@ -11,7 +11,7 @@ Only these two providers are carried. The stock-Protenix patch kit is not applie
 | `fpf_triatt_k2b.json`, `fpf_trimul_v4.json` | `opt_core/kernels/META/` | identical |
 | `opt_core/oom.py`, `opt_core/kernels/safe_settings.py` | same paths | identical (stdlib dependencies of both kernels) |
 | `opt_core/kernels/fpf_flashpairformer.PROTENIX_LICENSE` | same path | identical (portions derive from Protenix, Apache-2.0) |
-| `opt_core/kernels/fpf_trimul_v4/{__init__,generic,cells,kernels,kdesc,table}.py`, `table.json`, `NOTICE` | same paths | identical except `cells.py` (below) |
+| `opt_core/kernels/fpf_trimul_v4/{__init__,generic,cells,kernels,kdesc,table}.py`, `table.json`, `NOTICE` | same paths | local changes in `cells.py` and `generic.py` (below) |
 | `opt_core/kernels/fpf_triatt_k2b/triatt_k2b.py`, `K2B_CELLS.json`, `NOTICE` | same paths | identical except `triatt_k2b.py` (below) |
 | `opt_core/__init__.py`, `opt_core/kernels/__init__.py`, `opt_core/kernels/fpf_triatt_k2b/__init__.py` | — | new one-line docstring packages. The upstream K2B `__init__` (a `sys.path` loader plus registry wrappers) is not carried. |
 
@@ -23,6 +23,10 @@ fpf_triatt_k2b/triatt_k2b.py:650  from opt_core.oom import is_oom               
 fpf_triatt_k2b/triatt_k2b.py:678  from opt_core.oom import is_oom                       ->  from ...oom import is_oom
 fpf_trimul_v4/cells.py:12         from opt_core.kernels import safe_settings as SAFE   ->  from .. import safe_settings as SAFE
 ```
+
+The warm probe in `fpf_trimul_v4/generic.py` checks both the provider and the BF16 class reference against the FP64 reference.
+A nonfinite error maximum or sum of squares at any probe size or in either direction fails the probe.
+Cached ratios must pass the same limits. The package digest in the stamp key invalidates verdicts from the earlier code.
 
 Behaviour of the standalone copy (upstream code paths, not edits):
 - `generic.trimul_packed` tries `opt_core.kernels.trimul._pystack`. It gets ImportError and dispatches directly, without the padded first call.
