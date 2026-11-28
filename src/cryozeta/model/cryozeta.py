@@ -453,6 +453,15 @@ class CryoZeta(nn.Module):
             all_pred_dict["coordinate_superimposed"] = _cat(
                 pred_dicts, "coordinate_superimposed"
             )
+            fits = []
+            sample_offset = 0
+            for pred_dict in pred_dicts:
+                fits.extend(
+                    {**fit, "sample_idx": fit["sample_idx"] + sample_offset}
+                    for fit in pred_dict["superimposed_fits"]
+                )
+                sample_offset += len(pred_dict["summary_confidence"])
+            all_pred_dict["superimposed_fits"] = fits
 
         all_log_dict = simple_merge_dict_list(log_dicts)
         all_time_dict = simple_merge_dict_list(time_trackers)
@@ -633,73 +642,25 @@ class CryoZeta(nn.Module):
             del score_map
             if coordinate_teaser is None:
                 logger.info("FitModelPointsTeaser returned None")
-        pred_dict["coordinate_svd_0.8"] = coordinate_svd_08
-        pred_dict["coordinate_svd_0.4"] = coordinate_svd_04
-        pred_dict["coordinate_teaser"] = coordinate_teaser
+        fit_results = {
+            "svd_0.8": (
+                coordinate_svd_08, recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08
+            ),
+            "svd_0.4": (
+                coordinate_svd_04, recall_score_svd_04, ccc_mask_svd_04, ccc_box_svd_04
+            ),
+            "teaser": (
+                coordinate_teaser, recall_score_teaser, ccc_mask_teaser, ccc_box_teaser
+            ),
+        }
         pred_dict["coordinate_vesper"] = None
-        pred_dict["coordinate_superimposed"] = None
-
-        total_score_svd_08 = [
-            recall_score_svd_08[i] + ccc_mask_svd_08[i] - num_big_distances[i]
-            for i in range(N_sample)
-        ]
-        total_score_svd_04 = [
-            recall_score_svd_04[i] + ccc_mask_svd_04[i] - num_big_distances[i]
-            for i in range(N_sample)
-        ]
-        total_score_teaser = [
-            recall_score_teaser[i] + ccc_mask_teaser[i] - num_big_distances[i]
-            for i in range(N_sample)
-        ]
-
-        coordinate_superimposed = pred_dict["coordinate"].clone()
-        if (
-            sum(recall_score_svd_08)
-            + sum(recall_score_svd_04)
-            + sum(recall_score_teaser)
-            > 0
-        ):
-            # Build combined scores and method tracking, excluding methods that returned None
-            combined_scores = []
-            score_method_indices = []  # (method_id, sample_idx)
-            
-            if coordinate_svd_08 is not None:
-                for i in range(N_sample):
-                    combined_scores.append(total_score_svd_08[i])
-                    score_method_indices.append((0, i))
-            
-            if coordinate_svd_04 is not None:
-                for i in range(N_sample):
-                    combined_scores.append(total_score_svd_04[i])
-                    score_method_indices.append((1, i))
-            
-            if coordinate_teaser is not None:
-                for i in range(N_sample):
-                    combined_scores.append(total_score_teaser[i])
-                    score_method_indices.append((2, i))
-            
-            # Sort all scores and select top N_sample
-            sorted_indices = sorted(
-                range(len(combined_scores)),
-                key=lambda idx: combined_scores[idx],
-                reverse=True,
-            )
-            for i in range(N_sample):
-                method_id, sample_idx = score_method_indices[sorted_indices[i]]
-                if method_id == 0:
-                    coordinate_superimposed[i] = coordinate_svd_08[sample_idx]
-                elif method_id == 1:
-                    coordinate_superimposed[i] = coordinate_svd_04[sample_idx]
-                elif method_id == 2:
-                    coordinate_superimposed[i] = coordinate_teaser[sample_idx]
-        else:
+        use_vesper = not any(
+            sum(recall) > 0 and coords is not None
+            for coords, recall, _, _ in fit_results.values()
+        )
+        if use_vesper:
             try:
-                (
-                    coordinate_vesper,
-                    recall_score_vesper,
-                    ccc_mask_vesper,
-                    ccc_box_vesper,
-                ) = FitModelVESPER(
+                coords, recall, ccc_mask, ccc_box = FitModelVESPER(
                     all_atom=pred_dict["coordinate"],
                     atom_array=input_feature_dict["atom_array"],
                     entity_poly_type=input_feature_dict["entity_poly_type"],
@@ -710,60 +671,53 @@ class CryoZeta(nn.Module):
                     resolution_map=input_feature_dict.get("resolution", None),
                     contour_level_map=input_feature_dict.get("contour_level", None),
                 )
-                pred_dict["coordinate_vesper"] = coordinate_vesper
-                total_score_vesper = [
-                    recall_score_vesper[i] + ccc_mask_vesper[i] - num_big_distances[i]
-                    for i in range(N_sample)
-                ]
-                sorted_indices = sorted(
-                    range(len(total_score_vesper)),
-                    key=lambda idx: total_score_vesper[idx],
-                    reverse=True,
-                )
-                for i in range(N_sample):
-                    coordinate_superimposed[i] = coordinate_vesper[sorted_indices[i]]
-
+                fit_results["vesper"] = (coords, recall, ccc_mask, ccc_box)
             except Exception as e:
                 logger.error(f"Error in FitModelVESPER: {e}")
 
+        candidates = []
+        score_rows = []
+        for method, (coords, recall, ccc_mask, ccc_box) in fit_results.items():
+            pred_dict[f"coordinate_{method}"] = coords
+            if coords is None and method == "vesper":
+                continue
+            write_scores = method == "vesper" or sum(recall) > 0
+            for sample_idx, penalty in enumerate(num_big_distances):
+                score = recall[sample_idx] + ccc_mask[sample_idx] - penalty
+                if coords is not None and (not use_vesper or method == "vesper"):
+                    candidates.append((method, sample_idx, score))
+                if write_scores:
+                    score_rows.append(
+                        f"{pdb_id},{sample_idx},{method},{recall[sample_idx]},"
+                        f"{ccc_mask[sample_idx]},{ccc_box[sample_idx]},{penalty},{score}\n"
+                    )
+
+        coordinate_superimposed = pred_dict["coordinate"].clone()
+        superimposed_fits = [
+            {"method": None, "sample_idx": idx, "score": None}
+            for idx in range(N_sample)
+        ]
+        for rank, (method, sample_idx, score) in enumerate(
+            sorted(candidates, key=lambda fit: fit[2], reverse=True)[:N_sample]
+        ):
+            coordinate_superimposed[rank] = pred_dict[f"coordinate_{method}"][sample_idx]
+            superimposed_fits[rank] = {
+                "method": method,
+                "sample_idx": sample_idx,
+                "score": float(score),
+            }
         pred_dict["coordinate_superimposed"] = coordinate_superimposed
+        pred_dict["superimposed_fits"] = superimposed_fits
 
         output_dir = f"{input_feature_dict['dump_dir']}/saved_data"
         os.makedirs(output_dir, exist_ok=True)
-        if not os.path.exists(f"{output_dir}/scores.csv"):
-            with open(f"{output_dir}/scores.csv", "w") as f:
+        score_path = f"{output_dir}/scores.csv"
+        with open(score_path, "a") as f:
+            if f.tell() == 0:
                 f.write(
                     "pdb_id,sample_idx,method,recall,ccc_mask,ccc_box,num_dist_over_4,recall_ccmask_ca\n"
                 )
-        if sum(recall_score_svd_08) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},svd_0.8,{recall_score_svd_08[n]},{ccc_mask_svd_08[n]},{ccc_box_svd_08[n]},{num_big_distances[n]},{total_score_svd_08[n]}\n"
-                    )
-        if sum(recall_score_svd_04) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},svd_0.4,{recall_score_svd_04[n]},{ccc_mask_svd_04[n]},{ccc_box_svd_04[n]},{num_big_distances[n]},{total_score_svd_04[n]}\n"
-                    )
-        if sum(recall_score_teaser) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},teaser,{recall_score_teaser[n]},{ccc_mask_teaser[n]},{ccc_box_teaser[n]},{num_big_distances[n]},{total_score_teaser[n]}\n"
-                    )
-        if (
-            sum(recall_score_svd_08)
-            + sum(recall_score_svd_04)
-            + sum(recall_score_teaser)
-            == 0
-        ):
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},vesper,{recall_score_vesper[n]},{ccc_mask_vesper[n]},{ccc_box_vesper[n]},{num_big_distances[n]},{total_score_vesper[n]}\n"
-                    )
+            f.writelines(score_rows)
 
         output_dict = {}
         output_dict["ca_mask"] = ca_mask

@@ -46,7 +46,9 @@ _COORD_TYPE_MAP = {
     "coordinate": None,
     "coordinate_teaser": "teaser",
     "coordinate_svd_0.8": "svd",
+    "coordinate_svd_0.4": "svd_0.4",
     "coordinate_vesper": "vesper",
+    "coordinate_superimposed": "superimposed",
 }
 
 
@@ -115,13 +117,30 @@ class DataDumper:
             structure: Save the predicted coordinates as CIF files.
             confidence: Save the confidence data as JSON files.
         """
-        # Compute sorted indices by ranking_score (descending) so sample_0 = best
-        N_sample = len(pred_dict["summary_confidence"])
+        ranking_scores = [
+            summary["ranking_score"] for summary in pred_dict["summary_confidence"]
+        ]
         sorted_indices = sorted(
-            range(N_sample),
-            key=lambda i: pred_dict["summary_confidence"][i]["ranking_score"],
-            reverse=True,
+            range(len(ranking_scores)), key=ranking_scores.__getitem__, reverse=True
         )
+
+        fits = pred_dict.get("superimposed_fits")
+        fit_indices = sorted_indices
+        if fits is not None:
+            # These indices address fitted poses. Each pose also retains its
+            # original sample index for confidence-ranked raw fallback poses.
+            fit_keys = [
+                (
+                    fit["score"] is not None,
+                    fit["score"]
+                    if fit["score"] is not None
+                    else ranking_scores[fit["sample_idx"]],
+                )
+                for fit in fits
+            ]
+            fit_indices = sorted(
+                range(len(fits)), key=fit_keys.__getitem__, reverse=True
+            )
 
         for result in [
             "coordinate",
@@ -143,7 +162,9 @@ class DataDumper:
                     seed=seed,
                     atom_array=atom_array,
                     entity_poly_type=entity_poly_type,
-                    sorted_indices=sorted_indices,
+                    sorted_indices=fit_indices
+                    if result == "coordinate_superimposed"
+                    else sorted_indices,
                     coord_type=_COORD_TYPE_MAP.get(result),
                 )
             if result == "coordinate":
