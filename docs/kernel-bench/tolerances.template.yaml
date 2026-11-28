@@ -1,0 +1,14 @@
+# Correctness gates (plan §8.2), filled by P0-5 calibration on V0 BEFORE the first candidate trial.
+# Copy to tolerances.yaml, fill every value from the measured D_rep / D_seed / D_swap, set sealed: true and
+# record its sha256 in the experiment log. Changing a value later needs a fresh calibration on new seeds,
+# and both versions are reported. compare_outputs evaluates gates only when sealed is exactly true.
+sealed: false
+calibration:          # provenance of the numbers below
+  baseline_policy: V0
+  trials: []          # trial dirs used for D_rep, D_seed (seeds 101-105) and D_swap (TriAtt DS4Sci vs cueq)
+  date: null
+ca_rmsd_max: null         # G-struct proxy: max per-sample Kabsch Ca RMSD vs baseline (A); <= D_seed
+confidence_abs_max: null  # G-struct: max |delta| of summary-confidence fields (pLDDT, pTM, ...); <= D_seed
+top1_must_match: null     # G-rank: true if D_swap kept top-1 on every calibration entry
+kendall_tau_min: null     # G-rank: tau of recall_ccmask_ca ranking; >= the value observed under D_swap
+trunk_rel_max: null       # G-trunk: relative Frobenius error of s and z; <= 2 x D_swap

@@ -1,0 +1,6 @@
+variant_id: M-CLEAR-never
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "Block-level allocator cache clearing 'never' in every stack (legacy rule is N_token > 2000). Allocator behavior only."
+clear_cache: never

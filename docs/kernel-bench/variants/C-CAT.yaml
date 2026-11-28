@@ -1,0 +1,10 @@
+variant_id: C-CAT
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "cueq TriMul with the four input-projection concatenations cached (inference only), at every TriMul site."
+strict: true
+replace:
+  - {op: trimul, call_site: empairformer, provider: cueq_cached_cat}
+  - {op: trimul, call_site: msa, provider: cueq_cached_cat}
+  - {op: trimul, call_site: confidence, provider: cueq_cached_cat}

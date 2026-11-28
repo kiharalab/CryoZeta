@@ -1,0 +1,4 @@
+variant_id: V0
+policy_id: V0
+layer: L2
+description: "Frozen V0 composite (demo flags, legacy M-CLEAR). Observe-mode counters only; empty replacement scope (coverage N/A)."

@@ -1,0 +1,6 @@
+variant_id: L2-EX-no-fast-layernorm
+policy_id: L2-EX-no-fast-layernorm
+baseline_id: V0
+layer: L2
+description: "Existing env: LAYERNORM_TYPE unset (no fused LayerNorm)."
+env: {LAYERNORM_TYPE: null}

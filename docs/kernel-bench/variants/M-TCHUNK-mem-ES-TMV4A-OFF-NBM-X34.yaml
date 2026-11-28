@@ -1,0 +1,11 @@
+variant_id: M-TCHUNK-mem-ES-TMV4A-OFF-NBM-X34
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "All exact K24 memory items (NO-RETRAIN-options X1-X4): M-TCHUNK-mem-ES-TMV4A-OFF-NBM (Anthropic FlashPairformer fpf_trimul_v4, uplifting-biomolecular-modeling @ f4f62fa, at the msa, empairformer and confidence trimul sites; NVIDIA cuEq triangle attention; bond_mask dropped before to_device) plus CRYOZETA_FREE_EMBED_INPUTS=1 (X3: drop raw pz/p features and pz_inputs/p_inputs after pz_init/p_init, model/cryozeta.py) and CRYOZETA_HEADS_LATE=1 (X4: diffusion_module and confidence_head weights on the CPU during the trunk, moved back after the trunk offload). Values unchanged by X3/X4."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0", CRYOZETA_DROP_BOND_MASK: "1", CRYOZETA_FREE_EMBED_INPUTS: "1", CRYOZETA_HEADS_LATE: "1"}
+replace:
+  - {op: trimul, call_site: msa, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: empairformer, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

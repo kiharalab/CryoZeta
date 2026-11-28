@@ -1,0 +1,9 @@
+variant_id: M-TCHUNK-mem-ES-TMV4C-OFF
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem-ES-TMV4C plus CRYOZETA_CONF_OFFLOAD_MIN_N=0: each confidence sample's pae/pde logits go to host memory as soon as they are computed (CryoZeta's own N > 2000 offload path, threshold lowered; values unchanged). Kernels as in M-TCHUNK-mem-ES-TMV4C: Anthropic FlashPairformer fpf_trimul_v4 (uplifting-biomolecular-modeling @ f4f62fa) at the confidence site, NVIDIA cuEq elsewhere."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0"}
+replace:
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

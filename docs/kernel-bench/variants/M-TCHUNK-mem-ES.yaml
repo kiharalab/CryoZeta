@@ -1,0 +1,6 @@
+variant_id: M-TCHUNK-mem-ES
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem plus PyTorch caching-allocator expandable segments (PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True in the process env). runner/inference.py:69 sets the same value but only after CUDA is already initialized by module imports, so it never takes effect in V0 (hostC probe 2026-11-22: segments is_expandable=False). Empty kernel replacement scope."
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"}

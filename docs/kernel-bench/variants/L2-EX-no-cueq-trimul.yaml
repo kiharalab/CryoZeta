@@ -1,0 +1,6 @@
+variant_id: L2-EX-no-cueq-trimul
+policy_id: L2-EX-no-cueq-trimul
+baseline_id: V0
+layer: L2
+description: "Existing flag: cueq TriMul off (OpenFold torch route)."
+cli_args: [--use_cuequivariance_multiplicative_update, "false"]

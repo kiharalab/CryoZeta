@@ -1,0 +1,11 @@
+variant_id: M-TCHUNK-mem-ES-TMV4A-OFF
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem-ES-TMV4C-OFF with the trimul replaced at every pair-stack site (LEDGER K24): Anthropic FlashPairformer fpf_trimul_v4 (uplifting-biomolecular-modeling @ f4f62fa) at the msa, empairformer and confidence sites instead of NVIDIA cuEq. Aimed at the K23 N 2048 OOM in the trunk cuEq trimul. Transition chunks sized by free memory, expandable segments, confidence pae/pde host offload as in -OFF."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0"}
+replace:
+  - {op: trimul, call_site: msa, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: empairformer, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

@@ -1,0 +1,9 @@
+variant_id: M-TCHUNK-mem-ES-TMV4C-OFF-NBM
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem-ES-TMV4C-OFF plus CRYOZETA_DROP_BOND_MASK=1 (LEDGER K24): the runner drops input_feature_dict['bond_mask'] before moving features to the GPU. It is an [N_atom, N_atom] int64 training-label mask that no inference code reads (4505 MiB live at the K23 N 2048 OOM, CUDA memory snapshot); values unchanged. Kernels as in M-TCHUNK-mem-ES-TMV4C-OFF: Anthropic FlashPairformer fpf_trimul_v4 (uplifting-biomolecular-modeling @ f4f62fa) at the confidence site, NVIDIA cuEq elsewhere."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0", CRYOZETA_DROP_BOND_MASK: "1"}
+replace:
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

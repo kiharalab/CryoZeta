@@ -1,0 +1,10 @@
+variant_id: M-TCHUNK-mem-ES-TMV4C-OFF-BF16C
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem-ES-TMV4C-OFF plus --skip_amp.confidence_head false: the confidence head runs under the same bf16 autocast as the trunk instead of being cast to fp32 (lossy; Protenix-lineage default keeps it fp32). Kernels: Anthropic FlashPairformer fpf_trimul_v4 (uplifting-biomolecular-modeling @ f4f62fa) at the confidence site, NVIDIA cuEq elsewhere."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0"}
+cli_args: ["--skip_amp.confidence_head false"]
+replace:
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

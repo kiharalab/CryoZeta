@@ -1,0 +1,6 @@
+variant_id: L2-EX-opm-tilelang
+policy_id: L2-EX-opm-tilelang
+baseline_id: V0
+layer: L2
+description: "Existing flag: TileLang OPM on."
+cli_args: [--use_opm_tilelang, "true"]

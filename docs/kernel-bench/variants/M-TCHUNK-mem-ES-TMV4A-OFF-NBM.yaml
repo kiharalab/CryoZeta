@@ -1,0 +1,11 @@
+variant_id: M-TCHUNK-mem-ES-TMV4A-OFF-NBM
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "K24 capacity combination without K2B: M-TCHUNK-mem-ES-TMV4A-OFF (Anthropic FlashPairformer fpf_trimul_v4, uplifting-biomolecular-modeling @ f4f62fa, at the msa, empairformer and confidence trimul sites instead of NVIDIA cuEq) plus CRYOZETA_DROP_BOND_MASK=1 (the runner drops the unused [N_atom, N_atom] int64 bond_mask before to_device). Triangle attention stays NVIDIA cuEq: the -K2B combination failed G-rank-top1 and K2B does not change capacity."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0", CRYOZETA_DROP_BOND_MASK: "1"}
+replace:
+  - {op: trimul, call_site: msa, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: empairformer, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

@@ -1,0 +1,6 @@
+variant_id: M-TCHUNK-mem
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "Memory policy: eval-mode Transition splits rows into a power-of-two chunk count sized from free GPU memory (model/modules/primitives.py transition_chunks; V0 splits only at N_token >= 3200). Row-wise math unchanged. Empty kernel replacement scope."
+env: {CRYOZETA_TRANSITION_CHUNK: memory}

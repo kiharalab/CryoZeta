@@ -1,0 +1,6 @@
+variant_id: L2-EX-opm-einsum
+policy_id: L2-EX-opm-einsum
+baseline_id: V0
+layer: L2
+description: "Existing env: USE_OPM_CHUNKED=0 (unchunked einsum OPM)."
+env: {USE_OPM_CHUNKED: "0"}

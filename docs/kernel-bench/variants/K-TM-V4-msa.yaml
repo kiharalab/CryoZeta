@@ -1,0 +1,8 @@
+variant_id: K-TM-V4-msa
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "FlashPairformer TriMul v4 (generic) at the msa call site only; all other sites keep V0."
+strict: true
+replace:
+  - {op: trimul, call_site: msa, provider: fpf_trimul_v4}

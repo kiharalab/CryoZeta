@@ -1,0 +1,6 @@
+variant_id: L2-EX-no-cueq-apb
+policy_id: L2-EX-no-cueq-apb
+baseline_id: V0
+layer: L2
+description: "Existing flag: cueq attention-pair-bias off (H1 control)."
+cli_args: [--use_cuequivariance_attention_pair_bias, "false"]

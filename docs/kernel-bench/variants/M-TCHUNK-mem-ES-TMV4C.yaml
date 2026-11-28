@@ -1,0 +1,9 @@
+variant_id: M-TCHUNK-mem-ES-TMV4C
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "M-TCHUNK-mem-ES (memory-sized Transition chunking + PyTorch expandable segments) plus Anthropic FlashPairformer TriMul v4 (fpf_trimul_v4, uplifting-biomolecular-modeling @ f4f62fa) at the confidence call site only, replacing NVIDIA cuEq fused_sigmoid_gated_dual_gemm there; all other sites keep V0."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"}
+replace:
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}

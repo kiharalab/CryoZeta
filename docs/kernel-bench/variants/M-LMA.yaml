@@ -1,0 +1,6 @@
+variant_id: M-LMA
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "Memory policy: use_lma true (low-memory attention where the stacks honour it; reachability is recorded by the rowcol/triatt counters). DS4Sci and cueq attention are switched off: Attention allows at most one alternative algorithm (primitives.py:610)."
+cli_args: [--use_lma, "true", --use_deepspeed_evo_attention, "false", --use_cuequivariance_attention, "false"]

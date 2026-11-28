@@ -1,0 +1,12 @@
+variant_id: M-TCHUNK-mem-ES-TMV4A-OFF-NBM-K2B
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "K24 combination of every exact item that passed its own gate: M-TCHUNK-mem-ES-TMV4A-OFF (Anthropic FlashPairformer fpf_trimul_v4, uplifting-biomolecular-modeling @ f4f62fa, at the msa, empairformer and confidence trimul sites instead of NVIDIA cuEq), plus CRYOZETA_DROP_BOND_MASK=1 as in -OFF-NBM, plus Anthropic FlashPairformer fpf_k2b triangle attention at the empairformer site instead of NVIDIA cuEq (gated alone as K-TA-K2B-empairformer). Transition chunks sized by free memory, expandable segments, confidence pae/pde host offload as in -OFF."
+strict: true
+env: {CRYOZETA_TRANSITION_CHUNK: memory, PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True", CRYOZETA_CONF_OFFLOAD_MIN_N: "0", CRYOZETA_DROP_BOND_MASK: "1"}
+replace:
+  - {op: trimul, call_site: msa, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: empairformer, provider: fpf_trimul_v4}
+  - {op: trimul, call_site: confidence, provider: fpf_trimul_v4}
+  - {op: triatt, call_site: empairformer, provider: fpf_k2b}

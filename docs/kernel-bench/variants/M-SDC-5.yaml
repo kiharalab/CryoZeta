@@ -1,0 +1,14 @@
+variant_id: M-SDC-5
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "Memory policy: sample_diffusion_chunk_size 5 (all N_sample in one chunk; V0: 1). DEFERRED, see deferred_reason."
+cli_args: [--infer_setting.sample_diffusion_chunk_size, "5"]
+status: deferred
+sample_paired: false
+deferred_reason: >-
+  The plan's precondition (sample RNG consumption unchanged) fails by inspection: chunk 5 regroups the
+  init-noise, per-step-noise and augmentation draws (generator.py:145-238), so at the same seed sample k
+  gets different noise than in V0. Sample-paired gates do not apply, and it is excluded from the main
+  benchmark and from winner selection. A future study needs a separately reviewed multi-seed/distributional
+  protocol or a declared noise-alignment design (AMENDMENT-1.md); seed-spread thresholds are not a substitute.

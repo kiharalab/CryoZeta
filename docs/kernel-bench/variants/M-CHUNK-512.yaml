@@ -1,0 +1,6 @@
+variant_id: M-CHUNK-512
+policy_id: V0
+baseline_id: V0
+layer: L2
+description: "Memory policy: infer_setting.chunk_size 512 (V0: 256). Empty kernel replacement scope."
+cli_args: [--infer_setting.chunk_size, "512"]

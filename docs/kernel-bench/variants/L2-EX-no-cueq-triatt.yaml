@@ -1,0 +1,6 @@
+variant_id: L2-EX-no-cueq-triatt
+policy_id: L2-EX-no-cueq-triatt
+baseline_id: V0
+layer: L2
+description: "Existing flag: cueq triangle attention off (DS4Sci/torch routes)."
+cli_args: [--use_cuequivariance_attention, "false"]

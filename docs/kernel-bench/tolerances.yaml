@@ -1,0 +1,19 @@
+# Correctness gates (plan §8.2), sealed 2026-11-19 (LEDGER K18). Calibration: P0-5 on real 9b0l, P-CZ Mode A, V0,
+# NVIDIA RTX A6000 (hostB); numbers from $KB/analysis/p05-hostB-9b0l.json (script $KB/analysis/p05_calibrate.py).
+# Rule (user decision 2026-11-19, after the pre-fixed rule in K17 failed): continuous gates = 2 x the largest D_swap value over
+# the three pairings (DS4Sci triangle attention vs V0 s101-r1/r2/r3); top-1 must match; Kendall tau is report-only.
+# Valid for candidates paired with V0 on the same GPU type (A6000); other GPU types need their own calibration.
+# Changing a value needs a fresh calibration on new seeds, and both versions are reported.
+sealed: true
+calibration:
+  baseline_policy: V0
+  gpu: NVIDIA RTX A6000 (hostB)
+  entry: 9b0l
+  root: $KB/trials/hostB/P0-5/9b0l
+  trials: ["L2-EX-no-cueq-triatt/s101-r1", "V0/s101-r1", "V0/s101-r2", "V0/s101-r3", "V0/s102-r1", "V0/s103-r1", "V0/s104-r1", "V0/s105-r1"]
+  date: 2026-11-19
+ca_rmsd_max: 2.3626390642829445           # Å; max-sample Kabsch Ca RMSD vs paired V0; 2 x D_swap (1.1813)
+confidence_abs_max: 5.5     # max |delta| over summary-confidence fields (pLDDT dominates); 2 x D_swap
+top1_must_match: true          # top-1 kept in 3/3 D_rep and 3/3 D_swap pairs
+kendall_tau_min: -1.0          # report-only (user decision): tau is still written by compare_outputs, -1 always passes
+trunk_rel_max: 0.023933752008011757  # max(s, z) relative Frobenius error; 2 x D_swap
