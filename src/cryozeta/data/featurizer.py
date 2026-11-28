@@ -23,7 +23,6 @@ from sklearn.neighbors import KDTree
 
 from cryozeta.data.constants import STD_RESIDUES, get_all_elems
 from cryozeta.data.tokenizer import Token, TokenArray
-from cryozeta.data.utils import get_ligand_polymer_bond_mask
 from cryozeta.utils.geometry import angle_3p, random_transform
 
 
@@ -623,15 +622,6 @@ class Featurizer:
             self.cropped_atom_array.modified_res_mask
         ).long()
 
-        lig_polymer_bonds = get_ligand_polymer_bond_mask(self.cropped_atom_array)
-        num_atoms = len(self.cropped_atom_array)
-        bond_mask_mat = np.zeros((num_atoms, num_atoms))
-        for i, j, _ in lig_polymer_bonds:
-            bond_mask_mat[i, j] = 1
-            bond_mask_mat[j, i] = 1
-        mask_features["bond_mask"] = torch.Tensor(
-            bond_mask_mat
-        ).long()  # [N_atom, N_atom]
         return mask_features
 
     def get_all_input_features(self):
