@@ -67,6 +67,7 @@ def _triangle(
     BM: tl.constexpr,
     BN: tl.constexpr,
     REUSE_RECIPROCAL: tl.constexpr,
+    FAST_SOFTMAX: tl.constexpr,
 ):
     i = tl.program_id(0) * BM + tl.arange(0, BM)
     row = tl.program_id(1).to(tl.int64)
@@ -82,22 +83,30 @@ def _triangle(
     # Compute the softmax statistics without storing the attention matrix.
     running_max = tl.full((BM,), -float("inf"), tl.float32)
     normalizer = tl.full((BM,), 0.0, tl.float32)
-    for tile in range(tl.cdiv(N, BN)):
+    stages: tl.constexpr = 2 if FAST_SOFTMAX else None
+    log2e: tl.constexpr = 1.4426950408889634
+    for tile in tl.range(tl.cdiv(N, BN), num_stages=stages):
         kpos = tile * BN + j
         score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
         maximum = tl.maximum(running_max, tl.max(score, 1))
         # An entirely masked first tile contributes zero until a finite key arrives.
         shift = tl.where(maximum == -float("inf"), 0.0, maximum)
-        alpha = libdevice.exp(running_max - shift)
-        prob = libdevice.exp(score - shift[:, None])
+        if FAST_SOFTMAX:
+            alpha = tl.exp2((running_max - shift) * log2e)
+            prob = tl.exp2((score - shift[:, None]) * log2e)
+        else:
+            alpha = libdevice.exp(running_max - shift)
+            prob = libdevice.exp(score - shift[:, None])
         normalizer = normalizer * alpha + tl.sum(prob, 1)
         running_max = maximum
 
-    if REUSE_RECIPROCAL:
+    if FAST_SOFTMAX:
+        log2_normalizer = libdevice.log2(normalizer)
+    elif REUSE_RECIPROCAL:
         inverse = tl.div_rn(1.0, normalizer)
     # PyTorch rounds normalized probabilities before multiplying by V.
     acc = tl.full((BM, D), 0.0, tl.float32)
-    for tile in range(tl.cdiv(N, BN)):
+    for tile in tl.range(tl.cdiv(N, BN), num_stages=stages):
         kpos = tile * BN + j
         score = _score_tile(q, key, mask, bias, i, kpos, c, N, ks2, ms3, bs2, bs3)
         v = tl.load(
@@ -105,14 +114,19 @@ def _triangle(
             kpos[:, None] < N,
             0,
         )
-        numerator = libdevice.exp(score - running_max[:, None])
-        if REUSE_RECIPROCAL:
-            # Correct the reciprocal product before rounding to the value dtype.
-            prob = numerator * inverse[:, None]
-            residual = tl.fma(-prob, normalizer[:, None], numerator)
-            prob = tl.fma(residual, inverse[:, None], prob)
+        shifted = score - running_max[:, None]
+        if FAST_SOFTMAX:
+            # Subtract the maximum first so a large finite mask cannot swallow log2(Z).
+            prob = tl.exp2(tl.fma(shifted, log2e, -log2_normalizer[:, None]))
         else:
-            prob = tl.div_rn(numerator, normalizer[:, None])
+            numerator = libdevice.exp(shifted)
+            if REUSE_RECIPROCAL:
+                # Correct the reciprocal product before rounding to the value dtype.
+                prob = numerator * inverse[:, None]
+                residual = tl.fma(-prob, normalizer[:, None], numerator)
+                prob = tl.fma(residual, inverse[:, None], prob)
+            else:
+                prob = tl.div_rn(numerator, normalizer[:, None])
         acc = tl.dot(prob.to(v.dtype), v, acc)
     tl.store(
         OUT + ((row * H + head) * N + i[:, None]) * D + c[None, :],
@@ -191,9 +205,21 @@ def try_triangle(q, k, v, biases):
         and triton.__version__ == "3.9.0"
         and torch.cuda.get_device_name(q.device) == "NVIDIA RTX A6000"
     )
-    if reuse_reciprocal:
+    fast_softmax = (
+        reuse_reciprocal
+        and bias.dtype == q.dtype
+        and (bias.shape[0] == 1 or bias.stride(0) == 0)
+    )
+    if fast_softmax:
+        block_query, block_key = 64, 64
+        bias = bias[:1]
+        padded_length = triton.cdiv(length, 8) * 8
+        if bias.stride(-1) != 1 or bias.stride(-2) != padded_length:
+            packed = bias.new_empty((1, heads, length, padded_length))[..., :length]
+            packed.copy_(bias)
+            bias = packed
+    elif reuse_reciprocal:
         block_query, block_key, num_warps = 64, 128, 8
-        # Pack the shared bias before broadcasting so only one copy is allocated.
         if bias.shape[0] == 1 and bias.stride(1) == 1 and bias.stride(-1) == heads:
             bias = bias.contiguous()
     mask = mask.expand(rows, 1, 1, length)
@@ -219,6 +245,7 @@ def try_triangle(q, k, v, biases):
                 block_query,
                 block_key,
                 reuse_reciprocal,
+                fast_softmax,
                 num_warps=num_warps,
                 enable_fp_fusion=True,
             )
