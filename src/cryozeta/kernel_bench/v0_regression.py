@@ -18,7 +18,8 @@ task-scoped kernel cache (OUT/cache, so autotuned GPU kernels are the same for e
 Every dumped file is compared with baseline (routing arms: with v0trial): bytes first, then .json numbers,
 .pt tensors and .npz arrays as max |diff|. An .npz counts as identical when every member's bytes are (zip
 entries carry timestamps); object members are compared as raw bytes, never unpickled. Exit 0 iff patched, v0trial
-and repeat are bitwise identical to baseline, and every routing arm ran with its counters showing the
+and repeat preserve all baseline files bitwise and any new seed score tables match the original scores and
+coordinate ranks, and every routing arm ran with its counters showing the
 requested provider served at every replaced site (an arm whose every site keeps V0's served provider, or
 swaps cueq trimul for C-CAT, must also be bitwise equal);
 report "v0_ok" is the V0 part alone. Without CUDA the child shims Module.to(cuda) to CPU (see CHILD).
@@ -30,14 +31,17 @@ report "v0_ok" is the V0 part alone. Without CUDA the child shims Module.to(cuda
 from __future__ import annotations
 
 import argparse
+import csv
 import io
 import json
 import os
+import pickle
 import re
 import subprocess
 import sys
 import tarfile
 import time
+from pathlib import Path
 
 from cryozeta.kernel_bench import common as C
 
@@ -170,6 +174,42 @@ def compare_dirs(ref: str, cand: str) -> dict:
             "only_ref": sorted(fa - fb), "only_cand": sorted(fb - fa), "differing": diff}
 
 
+def compare_baseline(ref: str, cand: str) -> dict:
+    """Check all original artifacts and independently reconstruct seed-local rank tables for older dumps."""
+    result = compare_dirs(ref, cand)
+    base = Path(ref)
+    tables = {}
+    for predictions in base.glob("*/*/seed_*/predictions"):
+        seed = predictions.parent
+        stage = seed.parent
+        table = seed / "scores.csv"
+        if table.exists() or stage.name not in ("CryoZeta", "CryoZeta-Interpolate"):
+            continue
+        rel = str(table.relative_to(base))
+        try:
+            from cryozeta.runner.combine import _legacy_ranks
+
+            name = stage.parent.name
+            ranks = _legacy_ranks(stage, seed, name)
+            with (stage / "saved_data" / "scores.csv").open(newline="") as f:
+                expected = [
+                    (name, r["sample_idx"], r["method"], r["recall_ccmask_ca"], str(ranks[int(r["sample_idx"])]))
+                    for r in csv.DictReader(f) if r["pdb_id"] == name
+                ]
+            with (Path(cand) / rel).open(newline="") as f:
+                rows = csv.reader(f)
+                header = next(rows, [])
+                correct = header == ["pdb_id", "sample_idx", "method", "recall_ccmask_ca", "cif_rank"]
+                tables[rel] = correct and list(map(tuple, rows)) == expected
+        except (OSError, ValueError, KeyError, RuntimeError, pickle.UnpicklingError) as err:
+            tables[rel] = str(err)
+    result["seed_score_tables"] = tables
+    result["outputs_match"] = (not result["differing"] and not result["only_ref"]
+                               and set(result["only_cand"]) == set(tables)
+                               and all(v is True for v in tables.values()))
+    return result
+
+
 def _err_tail(dump: str) -> str:
     """Last line of the first ERR/*.txt inference wrote for a skipped sample."""
     for root, _, fs in sorted(os.walk(dump)):
@@ -295,8 +335,8 @@ def main(argv=None):
     ok = all(r["ok"] for r in arms.values())
     if ok:
         for n in ("patched", "v0trial", "repeat"):
-            rep["compare"][f"{n}_vs_baseline"] = cmp = compare_dirs(dump("baseline"), dump(n))
-            ok &= cmp["bitwise"]
+            rep["compare"][f"{n}_vs_baseline"] = cmp = compare_baseline(dump("baseline"), dump(n))
+            ok &= cmp["outputs_match"]
     rep["v0_ok"] = ok
     if a.route and arms["v0trial"]["ok"]:
         with open(os.path.join(out, "v0trial", "counters.json")) as f:

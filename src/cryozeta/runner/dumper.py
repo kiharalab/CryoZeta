@@ -12,6 +12,7 @@
 # code remains under Apache-2.0; the combined work is distributed
 # under GPLv3.
 
+import csv
 import os
 from pathlib import Path
 
@@ -123,6 +124,11 @@ class DataDumper:
             reverse=True,
         )
 
+        score_path = Path(dump_dir) / "scores.csv"
+        if "fit_scores" in pred_dict:
+            # Invalidate the previous selection table before replacing its CIFs.
+            score_path.write_text("")
+
         for result in [
             "coordinate",
             "coordinate_svd_0.8",
@@ -154,9 +160,19 @@ class DataDumper:
                     sorted_indices=sorted_indices,
                 )
 
+        if "fit_scores" in pred_dict:
+            ranks = {idx: rank for rank, idx in enumerate(sorted_indices)}
+            tmp = score_path.with_suffix(".csv.tmp")
+            with tmp.open("w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(("pdb_id", "sample_idx", "method", "recall_ccmask_ca", "cif_rank"))
+                for idx, method, score in pred_dict["fit_scores"]:
+                    writer.writerow((pdb_id, idx, method, score, ranks[idx]))
+            tmp.replace(score_path)
+
     def _save_structure(
         self,
-        pred_coordinates: torch.Tensor,
+        pred_coordinates: torch.Tensor | list[torch.Tensor | None],
         prediction_save_dir: str,
         sample_name: str,
         seed: int,
@@ -166,7 +182,6 @@ class DataDumper:
         coord_type: str | None = None,
     ):
         assert atom_array is not None
-        N_sample = pred_coordinates.shape[0]
 
         if self.atom_arrays_dir:
             npz_dir = self.atom_arrays_dir
@@ -177,17 +192,20 @@ class DataDumper:
             npz_prefix = sample_name
 
         if sorted_indices is None:
-            sorted_indices = list(range(N_sample))
+            sorted_indices = list(range(len(pred_coordinates)))
 
         suffix = f"_{coord_type}" if coord_type else ""
 
         for rank, idx in enumerate(sorted_indices):
+            coord = pred_coordinates[idx]
+            if coord is None:
+                continue
             output_fpath = os.path.join(
                 prediction_save_dir, f"{sample_name}_sample_{rank}.cif"
             )
             save_structure_cif(
                 atom_array=atom_array,
-                pred_coordinate=pred_coordinates[idx],
+                pred_coordinate=coord,
                 output_fpath=output_fpath,
                 entity_poly_type=entity_poly_type,
                 pdb_id=sample_name,

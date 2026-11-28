@@ -428,20 +428,33 @@ class CryoZeta(nn.Module):
             "point_noise_logits": _cat(pred_dicts, "point_noise_logits"),
         }
 
-        if all(pred_dict["coordinate_svd_0.8"] is not None for pred_dict in pred_dicts):
-            all_pred_dict["coordinate_svd_0.8"] = _cat(pred_dicts, "coordinate_svd_0.8")
-        if all(pred_dict["coordinate_svd_0.4"] is not None for pred_dict in pred_dicts):
-            all_pred_dict["coordinate_svd_0.4"] = _cat(pred_dicts, "coordinate_svd_0.4")
-        if all(pred_dict["coordinate_teaser"] is not None for pred_dict in pred_dicts):
-            all_pred_dict["coordinate_teaser"] = _cat(pred_dicts, "coordinate_teaser")
-        if all(pred_dict["coordinate_vesper"] is not None for pred_dict in pred_dicts):
-            all_pred_dict["coordinate_vesper"] = _cat(pred_dicts, "coordinate_vesper")
-        if all(
-            pred_dict["coordinate_superimposed"] is not None for pred_dict in pred_dicts
-        ):
-            all_pred_dict["coordinate_superimposed"] = _cat(
-                pred_dicts, "coordinate_superimposed"
-            )
+        for key in ("coordinate_svd_0.8", "coordinate_svd_0.4", "coordinate_teaser",
+                    "coordinate_vesper", "coordinate_superimposed"):
+            coords = [p[key] for p in pred_dicts]
+            if all(x is not None for x in coords):
+                all_pred_dict[key] = torch.cat(coords, dim=0)
+            elif any(x is not None for x in coords):
+                # A fit can succeed for just one internal seed. Keep its global
+                # sample indices so each available CIF retains its confidence rank.
+                samples = []
+                for pred, block in zip(pred_dicts, coords):
+                    samples.extend([None] * len(pred["summary_confidence"]) if block is None else block)
+                all_pred_dict[key] = samples
+
+        # Each internal model seed numbers its diffusion samples from zero. The
+        # dumped coordinate arrays concatenate those samples before confidence sorting.
+        fit_scores = []
+        sample_offset = 0
+        for model_seed, pred in enumerate(pred_dicts):
+            for idx, method, score in pred["fit_scores"]:
+                if pred[f"coordinate_{method}"] is None:
+                    raise ValueError(
+                        f"Cannot dump scored {method} sample {idx} from internal model seed {model_seed}: "
+                        "the fit produced no coordinates for this seed"
+                    )
+                fit_scores.append((sample_offset + idx, method, score))
+            sample_offset += len(pred["summary_confidence"])
+        all_pred_dict["fit_scores"] = fit_scores
 
         all_log_dict = simple_merge_dict_list(log_dicts)
         all_time_dict = simple_merge_dict_list(time_trackers)
@@ -766,35 +779,25 @@ class CryoZeta(nn.Module):
                 f.write(
                     "pdb_id,sample_idx,method,recall,ccc_mask,ccc_box,num_dist_over_4,recall_ccmask_ca\n"
                 )
-        if sum(recall_score_svd_08) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
+        fit_methods = [
+            ("svd_0.8", recall_score_svd_08, ccc_mask_svd_08, ccc_box_svd_08, total_score_svd_08),
+            ("svd_0.4", recall_score_svd_04, ccc_mask_svd_04, ccc_box_svd_04, total_score_svd_04),
+            ("teaser", recall_score_teaser, ccc_mask_teaser, ccc_box_teaser, total_score_teaser),
+        ]
+        fit_methods = [fit for fit in fit_methods if sum(fit[1]) > 0]
+        if sum(recall_score_svd_08) + sum(recall_score_svd_04) + sum(recall_score_teaser) == 0:
+            fit_methods.append(("vesper", recall_score_vesper, ccc_mask_vesper, ccc_box_vesper, total_score_vesper))
+
+        pred_dict["fit_scores"] = []
+        with open(f"{output_dir}/scores.csv", "a") as f:
+            for method, recalls, mask_scores, box_scores, totals in fit_methods:
+                for n in range(N_sample):
+                    score = f"{totals[n]}"
                     f.write(
-                        f"{pdb_id},{n},svd_0.8,{recall_score_svd_08[n]},{ccc_mask_svd_08[n]},{ccc_box_svd_08[n]},{num_big_distances[n]},{total_score_svd_08[n]}\n"
+                        f"{pdb_id},{n},{method},{recalls[n]},{mask_scores[n]},{box_scores[n]},"
+                        f"{num_big_distances[n]},{score}\n"
                     )
-        if sum(recall_score_svd_04) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},svd_0.4,{recall_score_svd_04[n]},{ccc_mask_svd_04[n]},{ccc_box_svd_04[n]},{num_big_distances[n]},{total_score_svd_04[n]}\n"
-                    )
-        if sum(recall_score_teaser) > 0:
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},teaser,{recall_score_teaser[n]},{ccc_mask_teaser[n]},{ccc_box_teaser[n]},{num_big_distances[n]},{total_score_teaser[n]}\n"
-                    )
-        if (
-            sum(recall_score_svd_08)
-            + sum(recall_score_svd_04)
-            + sum(recall_score_teaser)
-            == 0
-        ):
-            for n in range(N_sample):
-                with open(f"{output_dir}/scores.csv", "a") as f:
-                    f.write(
-                        f"{pdb_id},{n},vesper,{recall_score_vesper[n]},{ccc_mask_vesper[n]},{ccc_box_vesper[n]},{num_big_distances[n]},{total_score_vesper[n]}\n"
-                    )
+                    pred_dict["fit_scores"].append((n, method, score))
 
         output_dict = {}
         output_dict["ca_mask"] = ca_mask

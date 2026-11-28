@@ -114,7 +114,7 @@ In hostA run 3, `patched` vs `repeat` differed by about as much as `baseline` vs
 CUDA V0 check needs either a deterministic kernel mode or sealed tolerances calibrated from `repeat`.
 
 - Arms `baseline`, `patched` (routing inert), `v0trial` (V0.yaml + counters + sync stage timer, as `run_trial` sets
-  them) and `repeat` (run-to-run noise floor). Exit 0 needs all three bitwise identical to baseline (`v0_ok`).
+  them) and `repeat` (run-to-run noise floor). Each arm must reproduce every baseline file bitwise. For older dumps, the harness also reconstructs the new seed-local `scores.csv` from the baseline scores and coordinates and checks every row. The report distinguishes literal tree equality (`bitwise`) from this compatibility check (`outputs_match`).
 - `--route` adds one strict arm per op the V0 counters saw (OPM einsum/chunked, row/column LMA/torch, TriMul
   C-CAT), replacing it at every site reached. Its counters must show the provider served at every replaced site.
   APB has no servable alternative in this model: the c544c6b gate `c_hidden % 32` rejects cueq at every site
