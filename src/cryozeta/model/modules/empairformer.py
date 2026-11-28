@@ -720,6 +720,7 @@ class MSAModule(nn.Module):
             ],
             dim=-1,
         )  # [..., N_msa_sample, N_token, 32 + 1 + 1]
+        del msa_feat
         # Line2
         msa_sample = self.linear_no_bias_m(msa_sample)
 
